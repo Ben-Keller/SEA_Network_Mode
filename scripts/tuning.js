@@ -22,7 +22,7 @@
       // Layout
       { key:"polygonRadiusFactor",  min:0.20,  max:0.50, step:0.005 },
       { key:"insetPadding",        min:6,     max:40,   step:1 },
-      { key:"minEdgeDistance",     min:6,     max:30,   step:1 },
+      { key:"minEdgeDistance",     min:2,     max:10,   step:1 },
 
       // Motion / distribution
       { key:"driftStrength",       min:0.000, max:0.080, step:0.001 },

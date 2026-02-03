@@ -17,412 +17,60 @@ Implementation notes (handover)
 - There is no label layer on nodes (intentionally removed for robustness).
 */
 
-/* =========================
-   1) Configuration & Themes
-   ========================= */
+import { CONFIG } from "./config.js";
+import { svg, initLayout, cx, cy, R } from "./layout.js";
+import { tooltip, buildTooltipHTML, renderInfo, renderDimInfo, renderLegend } from "./ui.js";
+import { anchors, angleDiff, polygonPoints, insetPolygon, polygonHalfPlanes, clampToPolygon, softBarrier } from "./geometry.js";
+import { normalizeWeights, minMaxNormalize, buildWeightMatrix, makeSimilarity } from "./weights.js";
+import { buildTopologyLinks, buildDimTopLinks } from "./links.js";
+import { State, clearFocus, setDim, setHoverNode, lockNode } from "./state.js";
 
-const THEMES = [
-  { id: "policy",          label: "Policy & Governance" },
-  { id: "technology",      label: "Technology & Systems" },
-  { id: "finance",         label: "Finance & Markets" },
-  { id: "equity",          label: "Equity & Social Impact" },
-  { id: "data",            label: "Data / Digital / Modeling" },
-  { id: "implementation",  label: "Implementation & Practice" },
-];
-
-const CONFIG = {
-  // Geometry
-  polygonRadiusFactor: 0.29,
-  insetPadding: 38,               // keeps nodes away from edges (safe polygon inset)
-  minEdgeDistance: 20,            // extra margin enforced by soft barrier
-
-  // Motion
-  driftStrength: 0.074,           // subtle always-on drift (increase slightly if desired)
-  jitterStrength: 0.78,           // per-node static jitter prevents honeycomb settling
-  centerTether: 0.003,
-  outwardBias: 0.001,           // pushes nodes away from center (balanced by barrier)
-            // keeps centroid near center without over-regularizing
-
-  // Collision
-  collidePadding: 0.89,           // collision radius multiplier padding
-  collideStrength: 0.02,
-
-  // Focus forces (dimension/node)
-  dimBiasMax: 1.69,               // max scaling when a dim is active
-  dimBiasRamp: 0.2,              // ramp speed to avoid impulses
-  nodeSimStrength: 0.72,          // similarity pull/push intensity
-  nodeRepel: 0.96,                // repel for dissimilar nodes under focus
-
-  // Animation
-  sizeEase: 0.06,                 // smoothing for size changes
-  posEase: 0.085,                  // smoothing for target position changes
-
-  // Sizing lens (distance-based)
-  lensNone:   { inner: 0,   outer: 0,   power: 1.05, a: 1.20, b: 0.70, scale: 1.05 },
-  lensFocus:  { inner: 85,  outer: 280, power: 2.35, a: 1.65, b: 0.55, scale: 0.92 },
-
-  // Links
-  topoNeighbors: 2,
-  dimTopK: 10,
-};
-
-/* =========================
-   2) Canvas & Layout Helpers
-   ========================= */
-
-const svg = d3.select("#viz");
-let width = 900, height = 650;
-
-function resize() {
-  const rect = svg.node().getBoundingClientRect();
-  width  = Math.max(640, Math.floor(rect.width));
-  height = Math.max(520, Math.floor(rect.height));
-  svg.attr("viewBox", `0 0 ${width} ${height}`);
-}
-resize();
-
-window.addEventListener("resize", () => {
-  resize();
-  if (window.__rerender) window.__rerender();
-});
-
-const cx = () => width * 0.5;
-const cy = () => height * 0.5;
-const R  = () => Math.min(width, height) * CONFIG.polygonRadiusFactor;
-
-/* Tooltip */
-const tooltip = d3.select("body")
-  .append("div")
-  .attr("class", "tooltip")
-  .style("opacity", 0);
-
-function buildTooltipHTML(d) {
-  const img = d.thumb ? `<img class="thumb" src="${d.thumb}" alt=""/>` : ``;
-  return `
-    <div class="tipRow">${img}<div class="tipText">
-      <div class="t">${d.lesson_id} — ${d.lesson_title || "(untitled)"}</div>
-      <div class="s">Module ${d.module_id}: ${d.module_title || ""}<br/>${d.chapter_title || ""}</div>
-    </div></div>
-  `;
-}
-
-/* Info panel */
-const info = d3.select("#info");
-function renderInfo(node) {
-  if (!node) {
-    info.html(`<div class="empty">Hover a node to preview. Click to lock selection.</div>`);
-    return;
-  }
-  info.html(`
-    <div class="row">
-      <div>
-        <div class="k">Lesson</div>
-        <div class="v">${node.lesson_id}</div>
-      </div>
-      <div style="text-align:right">
-        <div class="k">Module</div>
-        <div class="v">${node.module_id}</div>
-      </div>
-    </div>
-    <div>
-      <div class="k">Title</div>
-      <div class="v">${node.lesson_title || "(untitled)"}</div>
-    </div>
-    <div class="row">
-      <div>
-        <div class="k">Chapter</div>
-        <div class="v">${node.chapter_title || ""}</div>
-      </div>
-      <div style="text-align:right">
-        <div class="k">Theme weights</div>
-        <div class="v">${THEMES.map(t => `${t.id}: ${(node.weights?.[t.id] ?? 0).toFixed(2)}`).join(" · ")}</div>
-      </div>
-    </div>
-    <div>
-      <div class="k">Description</div>
-      <div class="v">${node.lesson_description || ""}</div>
-    </div>
-  `);
-}
-
-/* =========================
-   3) Geometry: Polygon + Constraint
-   ========================= */
-
-function anchors() {
-  const n = THEMES.length;
-  return THEMES.map((d, i) => {
-    const ang = (-Math.PI / 2) + (i * 2 * Math.PI / n);
-    return { ...d, ang, x: cx() + Math.cos(ang) * R(), y: cy() + Math.sin(ang) * R() };
-  });
-}
-
-function polygonPoints(A) {
-  return A.map(a => [a.x, a.y]);
-}
-
-// Inset polygon by moving each vertex toward center (simple, robust enough for demo)
-function insetPolygon(poly, pad) {
-  const c = [cx(), cy()];
-  return poly.map(([x,y]) => {
-    const dx = x - c[0], dy = y - c[1];
-    const len = Math.max(1e-6, Math.hypot(dx,dy));
-    const nx = x - (dx/len) * pad;
-    const ny = y - (dy/len) * pad;
-    return [nx, ny];
-  });
-}
-
-// Half-plane form for each edge (normal pointing inward)
-function polygonHalfPlanes(poly) {
-  const planes = [];
-  for (let i=0;i<poly.length;i++){
-    const [x1,y1] = poly[i];
-    const [x2,y2] = poly[(i+1)%poly.length];
-    const ex = x2-x1, ey = y2-y1;
-    // inward normal: rotate edge by -90 then orient toward center
-    let nx = ey, ny = -ex;
-    const mx = (x1+x2)/2, my = (y1+y2)/2;
-    const toC = [cx()-mx, cy()-my];
-    if (nx*toC[0] + ny*toC[1] < 0) { nx=-nx; ny=-ny; }
-    const nlen = Math.max(1e-6, Math.hypot(nx,ny));
-    nx/=nlen; ny/=nlen;
-    const c0 = nx*x1 + ny*y1; // plane: nx*x + ny*y >= c0
-    planes.push({nx, ny, c0});
-  }
-  return planes;
-}
-
-// Project a point back into polygon safe region using half-plane distances
-function clampToPolygon(p, planes) {
-  let x = p.x, y = p.y;
-  for (let iter=0; iter<2; iter++) {
-    for (const pl of planes) {
-      const d = pl.nx*x + pl.ny*y - pl.c0;
-      if (d < 0) {
-        // push inward
-        x += (-d) * pl.nx;
-        y += (-d) * pl.ny;
-      }
-    }
-  }
-  p.x = x; p.y = y;
-}
-
-function softBarrier(node, planes, margin) {
-  // Adds an inward velocity component if close to boundary, asymptotically approaching edge
-  for (const pl of planes) {
-    const d = pl.nx*node.x + pl.ny*node.y - pl.c0; // positive inside
-    const dd = d - margin;
-    if (dd < 0) {
-      const push = (-dd) * 0.10; // soft strength
-      node.vx += push * pl.nx;
-      node.vy += push * pl.ny;
-
-      // cancel outward normal velocity to prevent ricochet
-      const vn = node.vx*pl.nx + node.vy*pl.ny;
-      if (vn < 0) {
-        node.vx -= vn * pl.nx;
-        node.vy -= vn * pl.ny;
-      }
-    }
-  }
-}
-
-/* =========================
-   4) Weights: Normalize + Similarity
-   ========================= */
-
-function normalizeWeights(w) {
-  // normalize sum to 1, avoid degenerate 0
-  const keys = Object.keys(w);
-  const s = keys.reduce((a,k) => a + Math.max(0, +w[k] || 0), 0);
-  if (s <= 0) {
-    const u = 1 / keys.length;
-    keys.forEach(k => w[k] = u);
-  } else {
-    keys.forEach(k => w[k] = Math.max(0, +w[k] || 0) / s);
-  }
-}
-
-function minMaxNormalize(nodes) {
-  // Optional: normalize weights per dimension across nodes for more consistent dim hover behavior
-  const mins = {}; const maxs = {};
-  THEMES.forEach(t => { mins[t.id]=Infinity; maxs[t.id]=-Infinity; });
-  nodes.forEach(n => {
-    THEMES.forEach(t => {
-      const v = n.weights[t.id] ?? 0;
-      if (v < mins[t.id]) mins[t.id]=v;
-      if (v > maxs[t.id]) maxs[t.id]=v;
-    });
-  });
-  nodes.forEach(n => {
-    n.wDimNorm = {};
-    THEMES.forEach(t => {
-      const lo = mins[t.id], hi = maxs[t.id];
-      const v = n.weights[t.id] ?? 0;
-      n.wDimNorm[t.id] = (hi > lo) ? ((v - lo) / (hi - lo)) : 0.5;
-    });
-  });
-}
-
-function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s += a[i]*b[i]; return s; }
-
-function buildWeightMatrix(nodes, useNorm=true) {
-  const W = nodes.map(n => {
-    const row = [];
-    for (const d of THEMES) row.push(useNorm ? (n.wDimNorm?.[d.id] ?? 0) : (n.weights?.[d.id] ?? 0));
-    return row;
-  });
-  const norms = W.map(r => r.reduce((s,v) => s + v*v, 0));
-  return { W, norms };
-}
-
-function makeSimilarity() {
-  // Gaussian kernel on squared Euclidean distance in weight space
-  const sigma = 0.044;
-  return (n, h) => {
-    const d2 = n.__wnorm + h.__wnorm - 2 * dot(n.__wrow, h.__wrow);
-    const sim = Math.exp(-d2 / sigma);
-    return Math.max(0, Math.min(1, sim));
-  };
-}
-
-/* =========================
-   5) Links: Topology + Dim-to-TopK (visual only)
-   ========================= */
-
-function buildTopologyLinks(nodes) {
-  const links = [];
-  for (let i=0;i<nodes.length;i++){
-    const a = nodes[i];
-    let best = [];
-    for (let j=0;j<nodes.length;j++){
-      if (i===j) continue;
-      const b = nodes[j];
-      const dx = a.__baseTx - b.__baseTx;
-      const dy = a.__baseTy - b.__baseTy;
-      const dd = dx*dx + dy*dy;
-      best.push({b, dd});
-    }
-    best.sort((x,y)=>x.dd-y.dd);
-    for (let k=0;k<Math.min(CONFIG.topoNeighbors, best.length);k++) {
-      links.push({source: a.lesson_id, target: best[k].b.lesson_id, kind:"topo"});
-    }
-  }
-  return links;
-}
-
-function buildDimTopLinks(nodes) {
-  const links = [];
-  for (const dim of THEMES) {
-    const ranked = nodes.slice().sort((a,b)=> (b.wDimNorm?.[dim.id] ?? 0) - (a.wDimNorm?.[dim.id] ?? 0));
-    ranked.slice(0, CONFIG.dimTopK).forEach(n => {
-      links.push({source: dim.id, target: n.lesson_id, kind:"dim", dim: dim.id});
-    });
-  }
-  return links;
-}
-
-/* =========================
-   6) State Machine
-   ========================= */
-
-const State = {
-  dimActivatedAt: 0,
-  // focus: dimension or node
-  activeDim: null,
-  lockedDim: null,
-  hoverNode: null,
-  lockedNode: null,
-  hoverPointer: null,      // {x,y} for gentle follow
-  suppressNextClick: false,
-
-  // smooth ramp for dim emphasis
-  dimBiasScale: 0.0,
-  dimBiasTarget: 0.0,
-};
-
-function clearFocus() {
-  State.activeDim = null;
-  State.dimActivatedAt = performance.now();
-  State.lockedDim = null;
-  State.dimActivatedAt = performance.now();
-  State.hoverNode = null;
-  State.lockedNode = null;
-  State.hoverPointer = null;
-}
-
-function setDim(dimId, lock=false) {
-  
-  State.dimActivatedAt = performance.now();
-const prevDim = (State.lockedDim ?? State.activeDim);
-
-  if (lock) {
-    if (State.lockedDim === dimId) {
-      State.lockedDim = null;
-      State.activeDim = null;
-    } else {
-      State.lockedDim = dimId;
-      State.activeDim = dimId;
-      State.lockedNode = null; // locking a dim clears node lock
-    }
-  } else {
-    if (State.lockedDim) return;
-    State.activeDim = dimId;
-  }
-  if ((State.lockedDim ?? State.activeDim) !== prevDim) {
-    State.dimActivatedAt = performance.now();
-  }
-  State.dimBiasTarget = State.activeDim ? CONFIG.dimBiasMax : 0.0;
-}
-
-function setHoverNode(n, pointer=null) {
-  State.hoverNode = n;
-  State.hoverPointer = pointer;
-}
-
-function lockNode(n) {
-  State.lockedNode = n;
-  State.hoverNode = null;
-  State.hoverPointer = null;
-  State.lockedDim = null;
-  State.activeDim = null;
-  State.dimBiasTarget = 0.0;
-}
-
-function unlockNode() {
-  if (State.lockedNode) { State.lockedNode.fx = null; State.lockedNode.fy = null; }
-  State.lockedNode = null;
-}
+initLayout();
 
 /* =========================
    7) Main: Load Data + Build Scene
    ========================= */
 
 async function main() {
-  const A = anchors();
-  const poly = polygonPoints(A);
-  const polySafe = insetPolygon(poly, CONFIG.insetPadding);
-  const planes = polygonHalfPlanes(polySafe);
+  // Build order: geometry → anchors → data → links → nodes → interaction → simulation
+  const dimMeta = await d3.json("data/dimensions.json");
+  const THEMES = (dimMeta?.dimensions || []).map(d => ({ id: d.id, label: d.label || d.id }));
+  const dimMap = new Map((dimMeta?.dimensions || []).map(d => [d.id, d]));
+
+  /* ---------- 7.1 Geometry ---------- */
+  let A = anchors(THEMES);
+  let poly = polygonPoints(A);
+  let polySafe = insetPolygon(poly, CONFIG.insetPadding);
+  let planes = polygonHalfPlanes(polySafe);
 
   svg.selectAll("*").remove();
   const g = svg.append("g");
 
   // Outer polygon
-  g.append("path")
+  const outerPoly = g.append("path")
     .attr("d", d3.line().curve(d3.curveLinearClosed)(poly))
     .attr("fill", "rgba(255,255,255,0.015)")
     .attr("stroke", "rgba(232,236,255,0.14)")
     .attr("stroke-width", 1.2);
 
+  // Dimension hover band (light ring)
+  const hoverRing = g.append("circle")
+    .attr("cx", cx())
+    .attr("cy", cy())
+    .attr("r", R() * ((CONFIG.dimHoverInnerFactor + CONFIG.dimHoverOuterFactor) * 0.5))
+    .attr("fill", "none")
+    .attr("stroke", "rgba(232,236,255,0.16)")
+    .attr("stroke-width", 1.4)
+    .attr("stroke-dasharray", "3 6");
+
+  /* ---------- 7.2 Anchors ---------- */
   // Theme anchors
   const anchorG = g.selectAll(".anchor")
     .data(A)
     .join("g")
     .attr("class", "anchor");
 
-  anchorG.append("circle")
+  const anchorDot = anchorG.append("circle")
     .attr("cx", d => d.x).attr("cy", d => d.y)
     .attr("r", 3.8)
     .attr("fill", "rgba(232,236,255,0.55)")
@@ -443,7 +91,7 @@ async function main() {
   // Large hit target around vertex
   const dimHitSel = anchorG.append("circle")
     .attr("cx", d => d.x).attr("cy", d => d.y)
-    .attr("r", 72)
+    .attr("r", 90)
     .attr("class", "dimHit")
     .attr("fill", "transparent")
     .style("cursor", "pointer");
@@ -452,14 +100,80 @@ async function main() {
   function dimLeave(event, ad) { setDim(null, false); updateDimTop(); styleAll(); kickSim(0.32); }
 
   anchorText.on("mouseenter", dimEnter).on("mouseleave", dimLeave)
-    .on("click", (event, ad) => { event.stopPropagation(); setDim(ad.id, true); updateDimTop(); styleAll(); kickSim(0.32); });
+    .on("click", (event, ad) => {
+      event.stopPropagation();
+      setDim(ad.id, true);
+      if (State.lockedDim) {
+        renderDimInfo(dimMap.get(State.lockedDim) || { id: State.lockedDim, label: ad.label });
+      } else {
+        renderInfo(null);
+      }
+      updateDimTop();
+      styleAll();
+      kickSim(0.32);
+    });
 
   dimHitSel.on("mouseenter", dimEnter).on("mouseleave", dimLeave)
-    .on("click", (event, ad) => { event.stopPropagation(); setDim(ad.id, true); updateDimTop(); styleAll(); kickSim(0.32); });
+    .on("click", (event, ad) => {
+      event.stopPropagation();
+      setDim(ad.id, true);
+      if (State.lockedDim) {
+        renderDimInfo(dimMap.get(State.lockedDim) || { id: State.lockedDim, label: ad.label });
+      } else {
+        renderInfo(null);
+      }
+      updateDimTop();
+      styleAll();
+      kickSim(0.32);
+    });
 
+  // Dimension hover ring: map pointer to nearest anchor within annulus.
+  function dimArcFromPointer(p) {
+    const dx = p[0] - cx();
+    const dy = p[1] - cy();
+    const dist = Math.hypot(dx, dy);
+    const inner = R() * CONFIG.dimHoverInnerFactor;
+    const outer = R() * CONFIG.dimHoverOuterFactor;
+    if (dist < inner || dist > outer) return null;
+    const ang = Math.atan2(dy, dx); // -pi..pi
+    let best = null;
+    let bestAbs = Infinity;
+    for (const a of A) {
+      const d = Math.abs(angleDiff(ang, a.ang));
+      if (d < bestAbs) { bestAbs = d; best = a.id; }
+    }
+    return best;
+  }
+
+  svg.on("mousemove", (event) => {
+    const t = event.target;
+    if (t && t.closest && (t.closest(".node") || t.closest(".dim") || t.closest(".dimLabel"))) {
+      return;
+    }
+    const p = d3.pointer(event, svg.node());
+    const dimId = dimArcFromPointer(p);
+    if (dimId !== State.hoverDimArc) {
+      State.hoverDimArc = dimId;
+      setDim(dimId, false);
+      updateDimTop();
+      styleAll();
+      kickSim(0.28);
+    }
+  });
+
+  svg.on("mouseleave", () => {
+    if (!State.hoverDimArc) return;
+    State.hoverDimArc = null;
+    setDim(null, false);
+    updateDimTop();
+    styleAll();
+    kickSim(0.22);
+  });
+
+  /* ---------- 7.3 Data ---------- */
   // Load nodes
-  const nodesRaw = await d3.json("sea_lesson_theme_weights.json");
-  const moduleStructure = await d3.json("module_structure.json");
+  const nodesRaw = await d3.json("data/sea_lesson_theme_weights.json");
+  const moduleStructure = await d3.json("data/module_structure.json");
 
   // Map thumbnails from module_structure.json
   function buildThumbMap(structure) {
@@ -510,39 +224,58 @@ async function main() {
   });
 
   // Normalize per-dim across nodes for better dim hover
-  minMaxNormalize(nodes);
+  minMaxNormalize(nodes, THEMES);
 
   // Weighted barycentric "base target" within polygon for each node
-  const Amap = new Map(A.map(a => [a.id, a]));
-  nodes.forEach(n => {
-    let tx = cx(), ty = cy();
-    for (const t of THEMES) {
-      const w = n.weights[t.id] ?? 0;
-      const a = Amap.get(t.id);
-      tx += (a.x - cx()) * w;
-      ty += (a.y - cy()) * w;
-    }
-    // Spread factor pushes nodes outward so the initial distribution uses more of the polygon area
-    const spreadFactor = 1.18;
-    n.__baseTx = cx() + (tx - cx()) * spreadFactor;
-    n.__baseTy = cy() + (ty - cy()) * spreadFactor;
-  });
+  let Amap = new Map(A.map(a => [a.id, a]));
+  // Base targets are barycentric positions derived from theme weights.
+  function recomputeBaseTargets() {
+    Amap = new Map(A.map(a => [a.id, a]));
+    nodes.forEach(n => {
+      let tx = cx(), ty = cy();
+      for (const t of THEMES) {
+        const w = n.weights[t.id] ?? 0;
+        const a = Amap.get(t.id);
+        tx += (a.x - cx()) * w;
+        ty += (a.y - cy()) * w;
+      }
+      // Spread factor pushes nodes outward so the initial distribution uses more of the polygon area
+      const spreadFactor = 1.18;
+      n.__baseTx = cx() + (tx - cx()) * spreadFactor;
+      n.__baseTy = cy() + (ty - cy()) * spreadFactor;
+    });
+  }
+  recomputeBaseTargets();
 
   // Similarity precompute (normalized vector rows)
-  const { W, norms } = buildWeightMatrix(nodes, true);
+  const { W, norms } = buildWeightMatrix(nodes, THEMES, true);
   nodes.forEach((n,i) => { n.__wrow = W[i]; n.__wnorm = norms[i]; });
   const similarity = makeSimilarity();
 
+  /* ---------- 7.4 Links ---------- */
   // Links for visual texture
   const topoLinks = buildTopologyLinks(nodes);
-  const dimLinks  = buildDimTopLinks(nodes);
+  const dimLinks  = buildDimTopLinks(nodes, THEMES);
 
   // For quick lookup by lesson id
   const nodeById = new Map(nodes.map(n => [n.lesson_id, n]));
 
-  // Color scale by module #
+  // Color scale by module # (prefer colors from module_structure.json)
   const moduleNums = Array.from(new Set(nodes.map(n => n.__moduleNum))).sort((a,b)=>a-b);
-  const color = d3.scaleOrdinal(moduleNums, d3.schemeTableau10.concat(d3.schemeSet3));
+  const moduleMeta = new Map((moduleStructure?.modules || []).map(m => {
+    const num = +String(m.id).replace(/[^\d]/g,"") || +m.id || 0;
+    return [num, { title: m.title || `Module ${m.id}`, color: m.color || null }];
+  }));
+  const moduleColors = moduleNums.map(num => moduleMeta.get(num)?.color || "#7a86a8");
+  const color = d3.scaleOrdinal(moduleNums, moduleColors);
+
+  // Legend (module order + colors)
+  const legendItems = moduleNums.map(num => ({
+    id: num,
+    label: moduleMeta.get(num)?.title || `Module ${num}`,
+    color: color(num),
+  }));
+  renderLegend(legendItems);
 
   // Link layers
   const linkG = g.append("g").attr("class", "links");
@@ -553,6 +286,9 @@ async function main() {
     .attr("stroke", "rgba(232,236,255,0.07)")
     .attr("stroke-width", 1.0);
 
+  let focusTopoSel = linkG.append("g").attr("class", "focusLinks")
+    .selectAll("line.focusTopo");
+
   const dimSel = linkG.selectAll("line.dim")
     .data(dimLinks)
     .join("line")
@@ -560,6 +296,7 @@ async function main() {
     .attr("stroke", "rgba(232,236,255,0.08)")
     .attr("stroke-width", 1.0);
 
+  /* ---------- 7.5 Nodes ---------- */
   // Node layer (hexagons)
   const nodeG = g.append("g").attr("class", "nodes");
 
@@ -590,7 +327,35 @@ async function main() {
     .attr("stroke-width", 1.8)
     .style("pointer-events", "none");
 
-  /* ---------- Interaction: nodes ---------- */
+  // Links from the locked node to its closest neighbors by weight similarity.
+  function buildFocusLinks(node) {
+    if (!node) return [];
+    const k = Math.max(0, Math.floor(CONFIG.focusTopoNeighbors || 0));
+    if (k <= 0) return [];
+    const ranked = nodes
+      .filter(n => n !== node)
+      .map(n => ({ source: node.lesson_id, target: n.lesson_id, score: similarity(n, node) }))
+      .sort((a,b) => b.score - a.score)
+      .slice(0, k);
+    return ranked.map(d => ({ source: d.source, target: d.target, kind: "focus" }));
+  }
+
+  // Rebuild focus links when the locked node changes.
+  function updateFocusLinks() {
+    const data = State.lockedNode ? buildFocusLinks(State.lockedNode) : [];
+    focusTopoSel = focusTopoSel
+      .data(data, d => `${d.source}->${d.target}`)
+      .join(
+        enter => enter.append("line")
+          .attr("class", "focusTopo")
+          .attr("stroke", "rgba(255,168,64,0.22)")
+          .attr("stroke-width", 1.4),
+        update => update,
+        exit => exit.remove()
+      );
+  }
+
+  /* ---------- 7.6 Interaction: nodes ---------- */
 
   function showTooltip(event, d) {
     tooltip.html(buildTooltipHTML(d))
@@ -608,7 +373,7 @@ async function main() {
     const p = d3.pointer(event, svg.node());
     setHoverNode(d, {x:p[0], y:p[1]});
     showTooltip(event, d);
-    if (!State.lockedNode) renderInfo(d);
+    if (!State.lockedNode) renderInfo(d, THEMES);
     styleAll();
     kickSim(0.32);
   }
@@ -632,10 +397,12 @@ async function main() {
     // Robust lock: pointerdown fires even when drag is attached (click can be suppressed by d3-drag).
     if (State.suppressNextClick) return;
     event.stopPropagation();
+    State.clickStartedOnNode = true;
 
     // Always lock (do not toggle off here). Unlock by clicking the background.
     lockNode(d);
-    renderInfo(d);
+    updateFocusLinks();
+    renderInfo(d, THEMES);
     showTooltip(event, d);
     updateDimTop();
     styleAll();
@@ -646,9 +413,11 @@ async function main() {
     // Click is best-effort (d3-drag may suppress it). Keep behavior consistent with pointerdown.
     if (State.suppressNextClick) return;
     event.stopPropagation();
+    State.clickStartedOnNode = false;
 
     lockNode(d);
-    renderInfo(d);
+    updateFocusLinks();
+    renderInfo(d, THEMES);
     showTooltip(event, d);
     updateDimTop();
     styleAll();
@@ -658,6 +427,7 @@ async function main() {
   // Click background to clear locks
   svg.on("click", (event) => {
     // Clear focus when clicking anywhere that is NOT a node or dimension control.
+    if (State.clickStartedOnNode) { State.clickStartedOnNode = false; return; }
     const t = event.target;
     if (event.defaultPrevented) return;
     if (t && t.closest) {
@@ -669,6 +439,7 @@ async function main() {
       clearFocus();
       renderInfo(null);
       hideTooltip();
+      updateFocusLinks();
       updateDimTop();
       styleAll();
       kickSim(0.30);
@@ -698,7 +469,8 @@ async function main() {
       if (d.__down && d.__down.moved && !d.__down.dragging) {
         d.__down.dragging = true;
         lockNode(d);
-        renderInfo(d);
+        updateFocusLinks();
+        renderInfo(d, THEMES);
         d.fx = d.x;
         d.fy = d.y;
       }
@@ -721,7 +493,7 @@ async function main() {
       for (const k of Object.keys(w)) w[k] /= sum;
       d.weights = w;
 
-      minMaxNormalize(nodes);
+      minMaxNormalize(nodes, THEMES);
       updateDimTop();
       styleAll();
       kickSim(0.55);
@@ -749,12 +521,19 @@ async function main() {
      8) Dimension Top Flags
      ========================= */
 
+  function collideRadius(d) {
+    const base = (d.size * 1.08 + 3.6) * CONFIG.collidePadding * (d.__cr || 1);
+    if ((State.lockedDim || State.activeDim) && d.__dimTop) return base * 1.35;
+    return base;
+  }
+
   function updateDimTop() {
     nodes.forEach(n => n.__dimTop = false);
-    const dim = State.activeDim;
+    const dim = (State.lockedDim ?? State.activeDim);
     if (!dim) return;
+    const k = Math.max(1, Math.floor(CONFIG.dimTopK || 10));
     const ranked = nodes.slice().sort((a,b) => (b.wDimNorm?.[dim] ?? 0) - (a.wDimNorm?.[dim] ?? 0));
-    ranked.slice(0, 10).forEach(n => n.__dimTop = true);
+    ranked.slice(0, k).forEach(n => n.__dimTop = true);
   }
   updateDimTop();
 
@@ -792,9 +571,11 @@ async function main() {
       const dcy = n.y - cy();
       const dCenter = Math.hypot(dcx, dcy);
       const u = Math.max(0, Math.min(1, dCenter / (R() * 0.98)));
-      const baseFall = Math.pow(u, 1.15);
+      // Soften center-distance effect on dim hover; strengthen in static state.
+      const basePower = (f.type === "dim") ? 1.25 : (f.type === "none" ? 1.45 : 1.15);
+      const baseFall = Math.pow(u, basePower);
       // center big -> edge smaller
-      const baseSizeTarget = (1.12 * (1 - baseFall) + 0.68 * baseFall) * 1.00;
+      const baseSizeTarget = (1.05 * (1 - baseFall) + 0.62 * baseFall) * 1.00;
 
       // Focus multiplier (dimension/node/hover) applied on top of baseline
       let mult = 1.0;
@@ -812,13 +593,33 @@ async function main() {
         const focusCore = (CONFIG.lensFocus.a * (1 - fall1) + CONFIG.lensFocus.b * fall1) * CONFIG.lensFocus.scale;
 
         // Normalize focusCore into a multiplier range ~[0.8..1.35]
-        mult = 0.80 + (focusCore - 0.55) * 0.75;
+        mult = 0.78 + (focusCore - 0.55) * 0.70;
 
         if (f.type === "dim" && n.__dimTop) mult *= 1.08;
         if ((f.type === "node" || f.type === "hover") && f.node === n) mult *= 1.18;
       }
 
-      n.sizeTarget = baseSizeTarget * mult;
+      const sizeFocusNode = State.hoverNode || (f.type === "node" ? f.node : null);
+
+      if ((State.lockedDim || State.activeDim) && n.__dimTop) {
+        // Dim top nodes: fixed large size (ignore other sizing rules).
+        n.sizeTarget = 1.85;
+      } else if (State.lockedNode && n === State.lockedNode) {
+        // Locked node: fixed large size (no radius-based scaling).
+        n.sizeTarget = 2.20;
+      } else if (State.hoverNode && n === State.hoverNode) {
+        // Hovered node (even when another is locked): large size.
+        n.sizeTarget = 2.20;
+      } else {
+        let sizeTarget = baseSizeTarget * mult;
+        if (sizeFocusNode) {
+          // When a node is selected, push far nodes closer to minimum size.
+          const dFocus = Math.hypot(n.x - sizeFocusNode.x, n.y - sizeFocusNode.y);
+          const tFocus = Math.max(0, Math.min(1, dFocus / (R() * 0.98)));
+          sizeTarget *= (1 - tFocus * 0.40);
+        }
+        n.sizeTarget = sizeTarget;
+      }
 
       // Smooth ease into rendered radius (scaled to pixels)
       n.size += (n.sizeTarget * 8.2 - n.size) * CONFIG.sizeEase;
@@ -830,8 +631,18 @@ async function main() {
     const f = focusDescriptor();
 
     nodesSel
-      .attr("stroke", d => (d === f.node && (f.type === "node" || f.type === "hover")) ? "rgba(255,255,255,0.92)" : "rgba(10,14,30,0.22)")
-      .attr("stroke-width", d => (d === f.node && (f.type === "node" || f.type === "hover")) ? 2.4 : 1.0)
+      .attr("stroke", d => {
+        if (State.lockedNode && d === State.lockedNode) return "rgba(255,168,64,0.95)";
+        if (State.hoverNode && d === State.hoverNode) return "rgba(255,255,255,0.92)";
+        if (d === f.node && (f.type === "node" || f.type === "hover")) return "rgba(255,255,255,0.92)";
+        return "rgba(10,14,30,0.22)";
+      })
+      .attr("stroke-width", d => {
+        if (State.lockedNode && d === State.lockedNode) return 3.0;
+        if (State.hoverNode && d === State.hoverNode) return 2.4;
+        if (d === f.node && (f.type === "node" || f.type === "hover")) return 2.4;
+        return 1.0;
+      })
       .attr("fill-opacity", d => (State.activeDim && State.activeDim !== null) ? 0.92 : 0.92);
 
     // Rings: show for same-module nodes when hovering/locked
@@ -843,7 +654,8 @@ async function main() {
 
     // Dimension text cue when locked
     anchorText
-      .style("font-weight", a => ((State.lockedDim || State.activeDim) && a.id === (State.lockedDim || State.activeDim)) ? 700 : 500)
+      .style("font-weight", a => (State.lockedDim && a.id === State.lockedDim) ? 800 : (((State.lockedDim || State.activeDim) && a.id === (State.lockedDim || State.activeDim)) ? 700 : 500))
+      .style("fill", a => (State.lockedDim && a.id === State.lockedDim) ? "rgba(255,168,64,0.98)" : "rgba(232,236,255,0.82)")
       .style("text-decoration", a => (State.activeDim && !State.lockedDim && a.id === State.activeDim) ? "underline" : "none")
       .style("opacity", a => (State.lockedDim && a.id !== State.lockedDim) ? 0.65 : 1);
   
@@ -857,11 +669,11 @@ async function main() {
     const k = Math.max(1, Math.floor(CONFIG.dimTopK || 10));
     // Rank by normalized weights for stability across dimensions
     const scored = nodes
-      .map(n => ({ id: n.id, w: (n.wDimNorm?.[dimId] ?? n.weights?.[dimId] ?? 0) }))
+      .map(n => ({ id: n.lesson_id, w: (n.wDimNorm?.[dimId] ?? n.weights?.[dimId] ?? 0) }))
       .sort((a,b) => b.w - a.w)
       .slice(0, k);
     const top = new Set(scored.map(d => d.id));
-    nodesSel.classed("dimTop", d => top.has(d.id));
+    nodesSel.classed("dimTop", d => top.has(d.lesson_id));
   }
   applyDimTopHighlight();
 
@@ -881,19 +693,22 @@ async function main() {
       .attr("y2", d => (nodeById.get(d.target)?.y ?? 0))
       .attr("stroke", d => (State.activeDim === d.dim) ? "rgba(232,236,255,0.18)" : "rgba(232,236,255,0.08)")
       .attr("stroke-width", d => (State.activeDim === d.dim) ? 1.8 : 1.0);
+
+    focusTopoSel
+      .attr("x1", d => nodeById.get(d.source)?.x ?? 0)
+      .attr("y1", d => nodeById.get(d.source)?.y ?? 0)
+      .attr("x2", d => nodeById.get(d.target)?.x ?? 0)
+      .attr("y2", d => nodeById.get(d.target)?.y ?? 0);
   }
 
   // Main target field: base target (weights) + drift + focus bias + similarity reflow + centroid stabilizer
 
 function dimMoveRamp() {
-  // Slow ramp-in so size/highlight reads first; positions follow smoothly.
+  // Immediate ramp (no delay) for dimension movement.
   const t0 = State.dimActivatedAt || 0;
   if (!t0) return 1;
   const dt = performance.now() - t0;
-  // No movement for ~350ms
-  if (dt < 350) return 0;
-  // 0..1 over ~900ms after the hold, with a gentle ease-in
-  const x = Math.max(0, Math.min(1, (dt - 350) / 900));
+  const x = Math.max(0, Math.min(1, dt / 700));
   return x * x * x; // ease-in cubic
 }
 
@@ -901,10 +716,12 @@ function dimMoveRamp() {
   function applyField(alpha) {
     // ramp dim bias smoothly
     dimBiasScale += (State.dimBiasTarget - dimBiasScale) * CONFIG.dimBiasRamp;
+    State.dimBiasScale = dimBiasScale;
 
     const f = focusDescriptor();
     const dim = (f.type === "dim") ? f.id : null;
     const ref = (f.type === "node" || f.type === "hover") ? f.node : null;
+    const hasDimTop = !!(State.lockedDim || State.activeDim);
 
     // centroid estimate
     let mx=0, my=0;
@@ -940,8 +757,9 @@ function dimMoveRamp() {
         const w = n.wDimNorm?.[dim] ?? 0;
         // exponential-ish attraction: strong for high weights, push for low
         const s = (Math.pow(w, 2.1) * 1.6 - 0.6); // range ~[-0.7,1.3]
-        tx += (a.x - cx()) * s * dimBiasScale * 0.50;
-        ty += (a.y - cy()) * s * (dimBiasScale * dimMoveRamp()) * 0.50;
+        const ramp = dimMoveRamp();
+        tx += (a.x - cx()) * s * (dimBiasScale * ramp) * 0.50;
+        ty += (a.y - cy()) * s * (dimBiasScale * ramp) * 0.50;
       }
 
       // similarity reflow around reference node
@@ -958,6 +776,36 @@ function dimMoveRamp() {
 
         tx += (-ux) * pull * 125 + (ux) * push * 70;
         ty += (-uy) * pull * 125 + (uy) * push * 70;
+      }
+
+      // Extra repel among top dim nodes to reduce overlap
+      if (hasDimTop && n.__dimTop) {
+        for (const m of nodes) {
+          if (m === n || !m.__dimTop) continue;
+          const dx = n.x - m.x;
+          const dy = n.y - m.y;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          if (dist > CONFIG.dimTopRepelRadius) continue;
+          const u = 1 - (dist / CONFIG.dimTopRepelRadius);
+          const push = u * u * CONFIG.dimTopRepelStrength;
+          tx += (dx / dist) * push * 120;
+          ty += (dy / dist) * push * 120;
+        }
+      }
+
+      // Light repel from hovered node when another node is locked.
+      if (State.lockedNode && State.hoverNode && n !== State.hoverNode) {
+        const hx = n.x - State.hoverNode.x;
+        const hy = n.y - State.hoverNode.y;
+        const hdist = Math.max(1, Math.hypot(hx, hy));
+        const hux = hx / hdist, huy = hy / hdist;
+        const repelRadius = 120;
+        if (hdist < repelRadius) {
+          const t = 1 - (hdist / repelRadius);
+          const repel = t * t * 0.45; // light, local push
+          tx += hux * repel * 120;
+          ty += huy * repel * 120;
+        }
       }
 
       // centroid tether (prevents whole map drifting away)
@@ -998,6 +846,7 @@ function dimMoveRamp() {
   }
 
   // D3 simulation (lightweight): we use it mainly for collision integration + smooth momentum
+  let sim = null;
   
   // Keep a tiny heartbeat so drift/jitter + size easing remain perceptible even after settling.
   // Without this, the simulation cools to a stop and time-based drift appears to "turn off".
@@ -1006,10 +855,10 @@ function dimMoveRamp() {
     const moving = (CONFIG.driftStrength > 0) || (CONFIG.jitterStrength > 0) || (State.activeDim != null) || (State.hoverNode != null) || (State.lockedNode != null);
     sim.alphaTarget(moving ? 0.018 : 0.010);
   }
-sim = d3.forceSimulation(nodes)
+  sim = d3.forceSimulation(nodes)
     .alphaDecay(0.018)
     .velocityDecay(0.38)
-    .force("collide", d3.forceCollide().radius(d => (d.size*1.08 + 3.6) * CONFIG.collidePadding * (d.__cr || 1)).strength(CONFIG.collideStrength))
+    .force("collide", d3.forceCollide().radius(collideRadius).strength(CONFIG.collideStrength))
     .force("charge", d3.forceManyBody().strength(-0.9))
     .on("tick", () => {
       applyField(sim.alpha());
@@ -1043,12 +892,55 @@ sim = d3.forceSimulation(nodes)
     if (sim) {
       sim.force("collide")
         .strength(CONFIG.collideStrength)
-        .radius(d => (d.size*1.08 + 3.6) * CONFIG.collidePadding * (d.__cr || 1));
+        .radius(collideRadius);
       updateHeartbeat();
     }
-  } };
+  }, __prevCx: cx(), __prevCy: cy() };
 
-  window.__rerender = () => { /* reserved for future: rebuild on resize */ };
+  window.__rerender = () => {
+    const prevCx = window.__SEA?.__prevCx ?? cx();
+    const prevCy = window.__SEA?.__prevCy ?? cy();
+    const dx = cx() - prevCx;
+    const dy = cy() - prevCy;
+
+    // Shift nodes to preserve visual centroid on resize.
+    nodes.forEach(n => {
+      n.x += dx; n.y += dy;
+      if (n.fx != null) n.fx += dx;
+      if (n.fy != null) n.fy += dy;
+    });
+
+    // Recompute geometry based on new size.
+    A = anchors(THEMES);
+    poly = polygonPoints(A);
+    polySafe = insetPolygon(poly, CONFIG.insetPadding);
+    planes = polygonHalfPlanes(polySafe);
+
+    // Update static geometry
+    outerPoly.attr("d", d3.line().curve(d3.curveLinearClosed)(poly));
+    hoverRing
+      .attr("cx", cx())
+      .attr("cy", cy())
+      .attr("r", R() * ((CONFIG.dimHoverInnerFactor + CONFIG.dimHoverOuterFactor) * 0.5));
+
+    anchorG.data(A);
+    anchorDot.data(A).attr("cx", d => d.x).attr("cy", d => d.y);
+    anchorText.data(A)
+      .attr("x", d => d.x).attr("y", d => d.y)
+      .attr("dx", d => (Math.cos(d.ang) > 0 ? 10 : -10))
+      .attr("dy", d => (Math.sin(d.ang) > 0 ? 14 : -8))
+      .attr("text-anchor", d => (Math.cos(d.ang) > 0 ? "start" : "end"));
+    dimHitSel.data(A).attr("cx", d => d.x).attr("cy", d => d.y);
+
+    // Update base targets for new center/anchors
+    recomputeBaseTargets();
+
+    if (window.__SEA) {
+      window.__SEA.__prevCx = cx();
+      window.__SEA.__prevCy = cy();
+    }
+    kickSim(0.35);
+  };
 }
 
 /* Entry */

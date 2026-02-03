@@ -1,0 +1,40 @@
+{
+  "dimensions": [
+    {
+      "id": "policy",
+      "label": "Policy & Governance",
+      "summary": "",
+      "details": ""
+    },
+    {
+      "id": "technology",
+      "label": "Technology & Systems",
+      "summary": "",
+      "details": ""
+    },
+    {
+      "id": "finance",
+      "label": "Finance & Markets",
+      "summary": "",
+      "details": ""
+    },
+    {
+      "id": "equity",
+      "label": "Equity & Social Impact",
+      "summary": "",
+      "details": ""
+    },
+    {
+      "id": "data",
+      "label": "Data / Digital / Modeling",
+      "summary": "",
+      "details": ""
+    },
+    {
+      "id": "implementation",
+      "label": "Implementation & Practice",
+      "summary": "",
+      "details": ""
+    }
+  ]
+}
