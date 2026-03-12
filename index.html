@@ -4,40 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SEA Lesson Map — 6D Polygon Pull (D3)</title>
-  <link rel="stylesheet" href="style.css?v=67" />
-  <link rel="icon" href="assets/favicon.ico">
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="style.css?v=72" />
 </head>
 <body>
-  <div class="app">
-    <div class="left">
-      <div class="topbar">
-        <div class="title">SEA Lesson Map</div>
-        <div class="subtitle">6-theme convex mapping • always-on drift • similarity reflow • topology links</div>
-      </div>
-      <svg id="viz" aria-label="Lesson polygon map"></svg>
-      <div class="hint">
-        Hover nodes to preview. Hover a theme label to spotlight top lessons. (Run via local server, not file://)
-      </div>
-    </div>
-
-    <div class="right">
-      <div class="panel">
-        <div class="panel-title">Information</div>
-        <div id="info" class="panel-body">
-          <div class="empty">
-            Hover a node to view its details.
-          </div>
-        </div>
-      </div>
-      <div class="panel small">
-        <div class="panel-title">Legend</div>
-        <div id="legend" class="panel-body"></div>
-      </div>
-    </div>
-  </div>
+  <div id="sea-viz" aria-label="SEA Lesson Map visualization"></div>
 
   <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script type="module" src="src/main.js?v=71"></script>
-  <script src="scripts/tuning.js?v=67"></script>
+  <script src="script.js?v=81"></script>
+  <script>
+    window.createSEALessonMap({ container: "#sea-viz" }).catch(console.error);
+  </script>
 </body>
 </html>

@@ -1,200 +1,266 @@
-SEA Lesson Map — Handover Documentation
-======================================
+SEA Lesson Map - Full Handover Documentation
+============================================
 
-Purpose
--------
-This visualization renders SEA lessons as nodes inside a multi‑dimensional polygon, with one vertex per dimension. The layout is a D3 force simulation guided by a custom target field, allowing soft clustering by weight, interactive focus on nodes or dimensions, and controlled drift for liveliness. The right panel provides lesson or dimension context, and the legend maps module colors.
+1. What This Is
+---------------
+This project provides an embeddable D3 visualization of SEA lesson data as a force-directed map inside a dimension polygon.
 
-Quick Start
------------
-1) Run from a local server (not file://) so JSON loads are allowed.
-2) Open index.html in the browser.
-3) Optional: toggle/adjust settings via the tuning panel (scripts/tuning.js).
+Primary goals:
+- Embed inside another application (React page is the target integration).
+- Support clean mount/unmount cycles (including UI toggles between this view and another interface).
+- Allow data source migration from local files to CMS endpoints with minimal integration changes.
 
-Repository Structure
+Current implementation status:
+- Single runtime script (`script.js`).
+- Single graph data config (`data/sea_network_graph_config.json`) containing dimensions, lesson weights, and tuning.
+- Lifecycle-safe API with explicit `create` and `destroy`.
+- Data source abstraction supports in-memory data, CMS URLs, or local fallback files.
+
+
+2. Repository Layout
 --------------------
-- index.html
-  Entry page. Loads D3, the main module, and the tuning panel.
-- style.css
-  Global styling (layout, panels, nodes, legend, tooltip).
-- src/
-  - main.js
-    Entry module; orchestrates data load, rendering, interactions, and the simulation loop.
-  - config.js
-    Central numeric tuning parameters.
-  - layout.js
-    SVG sizing, resize handling, and center/radius helpers.
-  - geometry.js
-    Polygon geometry, anchor construction, and boundary constraints.
-  - weights.js
-    Weight normalization and similarity matrix helpers.
-  - links.js
-    Topology links and dimension top‑K links.
-  - ui.js
-    Tooltip, info panel rendering, legend rendering.
-  - state.js
-    Interaction state and state transition helpers.
-- data/
-  - sea_lesson_theme_weights.json
-    Lesson nodes and dimension weights (runtime input).
-  - sea_lesson_theme_weights.csv
-    Source CSV (not used by runtime).
-  - module_structure.json
-    Module/lesson metadata and images (runtime input).
-  - dimensions.json
-    Dimension metadata (id, label, summary, details). Drives number of dimensions.
-- assets/
-  - favicon.ico
-- scripts/
-  - tuning.js
-    Live control panel for CONFIG tuning.
+- `index.html`
+  Minimal demo host (visualization-only shell).
+- `style.css`
+  Minimal visualization and tooltip styles.
+- `script.js`
+  Full runtime (data loading, layout, simulation, rendering, interactions, lifecycle).
+- `data/sea_network_graph_config.json`
+  Combined graph config: dimensions + lesson weights + tuning values.
+- `data/module_structure.json`
+  Module metadata, colors, and image mapping data.
 
-Core Data Contracts
+
+3. Runtime API (Vendor Integration Contract)
+--------------------------------------------
+Global entrypoint:
+- `window.createSEALessonMap(options) -> Promise<instance>`
+
+Instance shape:
+- `instance.svg`: mounted SVG DOM node
+- `instance.config`: live config object used by runtime
+- `instance.destroy()`: full cleanup for unmount/toggle transitions
+
+Important behavior:
+- No auto-init in `script.js`.
+- Calling `createSEALessonMap()` again destroys any prior active instance automatically.
+
+
+4. Options Reference
+--------------------
+`options.container`
+- Type: `string | Element`
+- Purpose: mount target for visualization.
+- Recommendation: always pass explicit container from host app.
+
+`options.dataDir`
+- Type: `string`
+- Default: `"data"`
+- Purpose: fallback base path for local files.
+
+`options.dataUrls`
+- Type: `object`
+- Keys: `graphConfig`, `moduleStructure`
+- Purpose: per-file URL overrides (typically CMS/API endpoints).
+
+`options.data`
+- Type: `object`
+- Keys: `graphConfig`, `moduleStructure`
+- Purpose: pre-fetched in-memory data supplied by host app.
+- Expected formats:
+  - JSON keys: parsed object/array.
+
+`options.minHeight`
+- Type: `number`
+- Default: `520`
+- Purpose: minimum mount height for generated/mounted visualization host.
+
+
+5. Data Resolution Logic (CMS Transition)
+-----------------------------------------
+Data lookup order is fixed and predictable:
+1. `options.data[key]`
+2. `options.dataUrls[key]`
+3. `options.dataDir + default filename`
+
+Default file map:
+- `graphConfig -> sea_network_graph_config.json`
+- `moduleStructure -> module_structure.json`
+
+Implication:
+- Vendor can move to CMS by only supplying `dataUrls` or `data`.
+- Visualization logic does not need to change when backend source changes.
+
+
+6. Data Schemas
+---------------
+6.1 `graphConfig` payload (`data/sea_network_graph_config.json`)
+- Root:
+  - `dimensions`: array of dimension metadata
+  - `weights`: array of lesson rows
+  - `tuning`: object of runtime tuning values (supports nested objects)
+- `dimensions[]` item:
+  - `id` (string, required): weight key used in lesson records.
+  - `label` (string, recommended): anchor label.
+  - `summary` (string, optional): shown in dimension info state.
+  - `details` (string, optional): shown in dimension info state.
+
+6.2 `graphConfig.weights[]` payload
+- Required fields:
+  - `lesson_id`
+  - `module_id`
+  - dimension weight keys matching all `dimensions[].id` values.
+- Optional display fields:
+  - `lesson_title`, `module_title`, `chapter_title`, `lesson_description`, etc.
+
+6.3 `moduleStructure` payload (`data/module_structure.json`)
+- Root includes `modules` array.
+- Used for:
+  - legend labels and colors
+  - lesson thumbnail resolution
+- Module color source of truth:
+  - `module.color`
+
+6.4 `graphConfig.tuning` payload
+- JSON object keyed by config names.
+- Supports nested tuning via nested objects.
+  - Example: `"lensFocus": { "power": 2.35 }`
+- Unknown keys are ignored with console warning.
+
+
+7. Interaction and Behavior Rules
+---------------------------------
+Node behavior:
+- Hover: tooltip + hover highlight + focus behavior.
+- Click: lock node, pin at current position.
+- Drag: updates node weights using anchor-distance rule.
+
+Dimension behavior:
+- Hover in annulus band: dimension focus by nearest anchor.
+- Click: lock dimension (without re-boosting when already focused via hover).
+- Locked dimension label: orange and bold.
+
+Highlight behavior:
+- Top-K dimension nodes highlighted by normalized dimension weight.
+- Locked node and hovered node use fixed-size emphasis.
+
+Link behavior:
+- Topology links: nearest neighbors by base layout target.
+- Dimension links: dimension to top-K weighted nodes.
+- Focus links: locked node to closest similarity neighbors.
+
+
+8. Layout and Simulation Notes
+------------------------------
+- Uses D3 force simulation with custom field updates per tick.
+- Nodes are constrained to an inset polygon via clamp + soft barrier.
+- Resize preserves visual centroid by translating existing nodes before recomputing geometry.
+
+
+9. React Integration (Recommended Pattern)
+------------------------------------------
+Use `destroy()` in `useEffect` cleanup.
+
+```jsx
+import { useEffect, useRef } from "react";
+
+export function SeaViz({ visible }) {
+  const hostRef = useRef(null);
+
+  useEffect(() => {
+    if (!visible || !hostRef.current || !window.createSEALessonMap) return;
+
+    let instance;
+    let cancelled = false;
+
+    window.createSEALessonMap({
+      container: hostRef.current,
+      dataUrls: {
+        graphConfig: "/api/cms/sea/network-graph-config",
+        moduleStructure: "/api/cms/sea/module-structure",
+      },
+      minHeight: 520,
+    }).then((viz) => {
+      if (cancelled) {
+        viz.destroy();
+        return;
+      }
+      instance = viz;
+    });
+
+    return () => {
+      cancelled = true;
+      instance?.destroy();
+    };
+  }, [visible]);
+
+  return <div ref={hostRef} style={{ width: "100%", height: 680 }} />;
+}
+```
+
+
+10. Lifecycle / Cleanup Semantics
+---------------------------------
+`destroy()` performs:
+- stop simulation
+- unbind SVG event handlers
+- remove tooltip node
+- remove/clear mounted SVG content
+- remove global resize listener for this instance
+- release instance references
+
+This is required for toggle flows and route transitions.
+
+
+11. Styling and Host App Expectations
+-------------------------------------
+- Host container should provide explicit width/height.
+- Runtime sets SVG to 100% width/height within container.
+- Tooltip uses `position:absolute` on `body`; ensure host stacking context does not hide it.
+
+
+12. Tuning Guide
+----------------
+Edit `data/sea_network_graph_config.json` (`tuning` object) to adjust behavior without code changes.
+
+Typical keys:
+- Geometry: `polygonRadiusFactor`, `insetPadding`, `minEdgeDistance`
+- Motion: `driftStrength`, `jitterStrength`, `centerTether`, `outwardBias`
+- Collision: `collidePadding`, `collideStrength`
+- Focus: `dimBiasMax`, `dimBiasRamp`, `nodeSimStrength`, `nodeRepel`
+- Lens: `lensFocus.inner`, `lensFocus.outer`, `lensFocus.power`
+- Highlight/links: `dimTopK`, `topoNeighbors`, `focusTopoNeighbors`
+
+
+13. Deployment Notes
+--------------------
+- Must be served over HTTP(S), not `file://`.
+- Ensure CMS endpoints send JSON with appropriate CORS headers.
+- Ensure endpoint auth context is available to host app before initialization if needed.
+
+
+14. Troubleshooting
 -------------------
-Dimensions (data/dimensions.json)
-- id: key used in node weight data
-- label: displayed at each vertex and in info panel
-- summary/details: shown when dimension is locked
+Blank visualization:
+- Verify `container` exists and has non-zero size.
+- Check network for data URL failures.
 
-Lesson Weights (data/sea_lesson_theme_weights.json)
-- Each lesson row must include numeric values for each dimension id.
-- Other fields provide display metadata (lesson_id, lesson_title, module_id, etc.).
+No data / partial render:
+- Confirm dimension IDs match keys in weights records.
+- Confirm `weights` payload is an array.
 
-Module Structure (data/module_structure.json)
-- Provides module titles, module colors, chapter/lesson titles, and images.
-- module.color is used for node color and legend swatches.
+Toggle leaks / duplicated behavior:
+- Ensure integration always calls `destroy()` in cleanup.
 
-Dimension Abstraction
----------------------
-The number of dimensions is not hardcoded. The system reads data/dimensions.json and uses its length to:
-- Build the polygon (anchors evenly spaced around the circle)
-- Read weights from nodes
-- Compute similarity vectors
-- Generate dimension top‑K links
+Unexpected config:
+- Check `sea_network_graph_config.json` tuning keys for typos.
+- Unknown keys are ignored by design.
 
-Add/remove dimensions by updating dimensions.json and ensuring matching weight keys exist in the lesson data.
 
-Rendering Pipeline (main.js)
+15. Vendor Handoff Checklist
 ----------------------------
-Build order:
-1) Geometry: anchors, polygon, safe inset, boundary planes
-2) Anchors: vertex labels and hit targets
-3) Data: load nodes, module metadata, and dimension metadata
-4) Links: topology links + dimension top‑K links
-5) Nodes: build node paths and rings
-6) Interaction: hover/click/drag handlers
-7) Simulation: force integration + custom field
-
-Interaction Rules
------------------
-Node Hover
-- Shows tooltip and previews node info (unless a node is locked).
-- Applies a gentle mouse-follow to the hovered node.
-
-Node Click (Lock)
-- Locks the node in place immediately (fx/fy set to current position, velocity zeroed).
-- Locked node uses an orange stroke and fixed large size.
-- Clicking background unlocks.
-
-Node Drag
-- Dragging a node locks it and updates weights based on inverse distance to anchors.
-- On drag end, if not locked, position is released.
-
-Dimension Hover
-- Hovering within the annulus ring around the polygon selects the nearest dimension.
-- Dimension hover does NOT require targeting the label.
-- Hover arcs are continuous (no dead zones between dimensions).
-- Dimension hover uses a short ramp‑in (no delay).
-
-Dimension Click (Lock)
-- Locks the dimension without increasing attraction if it was already active via hover.
-- Locked dimension label becomes orange and bold.
-- Info panel shows dimension metadata from dimensions.json.
-- Clicking background clears.
-
-Sizing Rules
-------------
-Node sizes are computed each tick based on a baseline size (distance from center), a focus lens, and special cases:
-- Baseline size depends on distance from center; in dimension mode, mid/center nodes shrink more.
-- Focus lens (node or dimension) modulates sizes around the focus point.
-- Locked node: fixed large size.
-- Hovered node: fixed large size.
-- Dimension top‑K nodes: fixed large size (ignore other rules).
-
-Highlighting Rules
-------------------
-- Dimension mode highlights only the top‑K nodes by normalized weight for that dimension.
-- Dim top‑K nodes get a strong stroke and are slightly repelled from each other.
-- Locked node gets an orange stroke; hover uses white stroke.
-
-Forces & Motion
----------------
-- Base target is a barycentric point computed from dimension weights.
-- Drift provides subtle motion to avoid static layouts.
-- Dimension mode applies attraction/repulsion relative to the dimension vertex.
-- Similarity reflow pulls similar nodes toward the focused node and repels dissimilar ones.
-- Hovered node applies a light local repel when another node is locked.
-- Boundary constraints clamp and softly push nodes inside the polygon.
-
-Collision & Separation
-----------------------
-- Global collide uses a single strength (CONFIG.collideStrength).
-- Dimension top‑K nodes get a larger collision radius.
-- Additional custom repel keeps top‑K nodes separated in dimension mode.
-
-Links
------
-- Topology links: each node connects to CONFIG.topoNeighbors nearest nodes (by base target distance).
-- Dimension links: each dimension connects to top‑K nodes by normalized weight (visual only).
-- Focus links: when a node is locked, it links to its closest neighbors by weight similarity (CONFIG.focusTopoNeighbors).
-
-Legend & Module Colors
-----------------------
-- Legend items are built from module_structure.json.
-- module.color is used for node fill color and legend swatches.
-
-Resize Behavior
----------------
-- On window resize, nodes are shifted by the change in center to preserve the visual centroid.
-- Anchors, polygon, and boundary planes are recomputed to match the new size.
-
-Tuning Panel
-------------
-The tuning panel (scripts/tuning.js) reads CONFIG from window.__SEA and allows live tuning. Typical parameters:
-- polygonRadiusFactor, insetPadding, minEdgeDistance
-- driftStrength, jitterStrength, centerTether, outwardBias
-- collidePadding, collideStrength
-- dimBiasMax, dimBiasRamp, nodeSimStrength, nodeRepel
-- posEase, sizeEase
-- topoNeighbors, dimTopK
-
-Key Config Parameters (config.js)
---------------------------------
-- polygonRadiusFactor
-- insetPadding
-- minEdgeDistance
-- driftStrength
-- jitterStrength
-- centerTether
-- outwardBias
-- collidePadding
-- collideStrength
-- dimBiasMax
-- dimBiasRamp
-- nodeSimStrength
-- nodeRepel
-- posEase
-- sizeEase
-- topoNeighbors
-- focusTopoNeighbors
-- dimTopK
-- dimHoverInnerFactor
-- dimHoverOuterFactor
-- dimTopRepelRadius
-- dimTopRepelStrength
-
-Build/Run Notes
----------------
-- Run via a local server (not file://), to allow JSON loads.
-- No build step required.
-- Entry module: src/main.js
+- Confirm host app can call `window.createSEALessonMap`.
+- Confirm mount/unmount path calls `destroy()`.
+- Confirm CMS endpoints configured for `graphConfig` and `moduleStructure`.
+- Confirm one successful mount with visible data and interactions.
+- Confirm toggle away/toggle back does not duplicate listeners or instances.

@@ -1,3 +1,620 @@
+/* Combined single-file build generated from src modules */
+
+/* ===== src/config.js ===== */
+const CONFIG = {
+  // Geometry
+  polygonRadiusFactor: 0.29,
+  insetPadding: 38,               // keeps nodes away from edges (safe polygon inset)
+  minEdgeDistance: 6,             // extra margin enforced by soft barrier
+
+  // Motion
+  driftStrength: 0.074,           // subtle always-on drift (increase slightly if desired)
+  jitterStrength: 0.78,           // per-node static jitter prevents honeycomb settling
+  centerTether: 0.003,
+  outwardBias: 0.001,             // pushes nodes away from center (balanced by barrier)
+                                  // keeps centroid near center without over-regularizing
+
+  // Collision
+  collidePadding: 0.89,           // collision radius multiplier padding
+  collideStrength: 0.02,
+
+  // Focus forces (dimension/node)
+  dimBiasMax: 1.69,               // max scaling when a dim is active
+  dimBiasRamp: 0.2,               // ramp speed to avoid impulses
+  nodeSimStrength: 0.72,          // similarity pull/push intensity
+  nodeRepel: 0.96,                // repel for dissimilar nodes under focus
+
+  // Animation
+  sizeEase: 0.06,                 // smoothing for size changes
+  posEase: 0.085,                 // smoothing for target position changes
+
+  // Sizing lens (distance-based)
+  lensNone:   { inner: 0,   outer: 0,   power: 1.05, a: 1.20, b: 0.70, scale: 1.05 },
+  lensFocus:  { inner: 85,  outer: 280, power: 2.35, a: 1.65, b: 0.55, scale: 0.92 },
+
+  // Links
+  topoNeighbors: 2,
+  focusTopoNeighbors: 10,
+  dimTopK: 10,
+
+  // Dimension hover band (annulus around vertices)
+  dimHoverInnerFactor: 0.92,
+  dimHoverOuterFactor: 1.20,
+
+  // Extra separation for top dim nodes
+  dimTopRepelRadius: 90,
+  dimTopRepelStrength: 0.35,
+};
+const DEFAULT_CONFIG = JSON.parse(JSON.stringify(CONFIG));
+
+/* ===== src/layout.js ===== */
+
+let svg = d3.select(null);
+let mountEl = null;
+let widgetRoot = null;
+let width = 900;
+let height = 650;
+let layoutBound = false;
+let resizeHandler = null;
+let rerenderHandler = null;
+
+function resize() {
+  if (svg.empty()) return;
+  const rect = svg.node().getBoundingClientRect();
+  width = Math.max(640, Math.floor(rect.width));
+  height = Math.max(520, Math.floor(rect.height));
+  svg.attr("viewBox", `0 0 ${width} ${height}`);
+}
+
+function initLayout() {
+  if (layoutBound) return;
+  layoutBound = true;
+  resize();
+  resizeHandler = () => {
+    resize();
+    if (rerenderHandler) rerenderHandler();
+  };
+  window.addEventListener("resize", resizeHandler);
+}
+
+function teardownLayout() {
+  if (resizeHandler) window.removeEventListener("resize", resizeHandler);
+  resizeHandler = null;
+  rerenderHandler = null;
+  layoutBound = false;
+}
+
+function setupMount(options = {}) {
+  const defaultHost = document.querySelector("#sea-viz") || document.querySelector("#viz");
+  const host = (typeof options.container === "string")
+    ? document.querySelector(options.container)
+    : (options.container || defaultHost);
+  mountEl = host || document.body;
+
+  if (mountEl.innerHTML != null) mountEl.innerHTML = "";
+  widgetRoot = document.createElement("div");
+  widgetRoot.className = "sea-widget";
+
+  const main = document.createElement("div");
+  main.className = "sea-widget-main";
+  const vizHost = document.createElement("div");
+  vizHost.className = "sea-widget-viz";
+  const svgNode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svgNode.setAttribute("aria-label", "Lesson polygon map");
+  vizHost.appendChild(svgNode);
+  main.appendChild(vizHost);
+
+  const side = document.createElement("aside");
+  side.className = "sea-widget-side";
+  side.innerHTML = `
+    <div class="panel info-panel">
+      <div class="panel-body sea-info-body">
+        <div class="empty">Hover or click a lesson node to view details.</div>
+      </div>
+    </div>
+    <div class="panel legend-panel">
+      <div class="panel-title">Legend</div>
+      <div class="panel-body sea-legend-body"></div>
+    </div>
+  `;
+
+  widgetRoot.appendChild(main);
+  widgetRoot.appendChild(side);
+  if (mountEl.appendChild) mountEl.appendChild(widgetRoot);
+
+  svg = d3.select(svgNode);
+  svg.style("width", "100%").style("height", "100%");
+  info = d3.select(side.querySelector(".sea-info-body"));
+  legend = d3.select(side.querySelector(".sea-legend-body"));
+
+  if (mountEl.style) {
+    if (!mountEl.style.width) mountEl.style.width = "100%";
+    if (!mountEl.style.height) mountEl.style.height = "100%";
+    if (!mountEl.style.minHeight) mountEl.style.minHeight = `${options.minHeight || 520}px`;
+  }
+}
+
+const cx = () => width * 0.5;
+const cy = () => height * 0.5;
+const R = () => Math.min(width, height) * CONFIG.polygonRadiusFactor;
+
+/* ===== src/ui.js ===== */
+let tooltip = d3.select(null);
+
+function ensureTooltip() {
+  if (!tooltip.empty()) return;
+  tooltip = d3.select("body")
+    .append("div")
+    .attr("class", "tooltip")
+    .style("left", "-9999px")
+    .style("top", "-9999px")
+    .style("opacity", 0);
+}
+
+function teardownTooltip() {
+  if (!tooltip.empty()) tooltip.remove();
+  tooltip = d3.select(null);
+}
+
+function buildTooltipHTML(d) {
+  const img = d.thumb ? `<img class="thumb" src="${d.thumb}" alt=""/>` : ``;
+  return `
+    <div class="tipRow">${img}<div class="tipText">
+      <div class="t">${d.lesson_id} — ${d.lesson_title || "(untitled)"}</div>
+      <div class="s">Module ${d.module_id}: ${d.module_title || ""}<br/>${d.chapter_title || ""}</div>
+    </div></div>
+  `;
+}
+
+let info = d3.select(null);
+let legend = d3.select(null);
+let infoLessonRefs = null;
+
+function clearInfoState() {
+  infoLessonRefs = null;
+}
+
+function formatLessonTitle(node) {
+  const rawTitle = String(node?.lesson_title || "(untitled)");
+  const lessonId = String(node?.lesson_id || "").trim();
+  if (!lessonId) return rawTitle;
+  // Keep original title text but replace any leading lesson number with the full lesson id.
+  return rawTitle.replace(/^\s*Lesson\s+[0-9]+(?:\.[0-9]+){0,3}/i, `Lesson ${lessonId}`);
+}
+
+function setInfoMode(refs, mode) {
+  const root = refs?.root;
+  if (!root) return;
+  root.classList.toggle("mode-init", mode === "init");
+  root.classList.toggle("mode-lesson", mode === "lesson");
+}
+
+function setThumbState(wrapEl, imgEl, { src, alt }) {
+  if (!wrapEl || !imgEl) return;
+  const hasSrc = !!String(src || "").trim();
+  wrapEl.classList.toggle("no-thumb", !hasSrc);
+  if (hasSrc) {
+    if (imgEl.getAttribute("src") !== src) imgEl.setAttribute("src", src);
+  } else {
+    imgEl.removeAttribute("src");
+  }
+  imgEl.setAttribute("alt", alt || "");
+}
+
+function ensureLessonInfoView() {
+  if (infoLessonRefs && infoLessonRefs.root?.isConnected) return infoLessonRefs;
+
+  info.html(`
+    <div class="sea-info-lesson mode-init">
+      <div class="info-media">
+        <div class="info-thumb-wrap info-logo-wrap no-thumb">
+          <img class="info-thumb info-logo-thumb" alt="" />
+        </div>
+        <div class="info-thumb-wrap info-lesson-wrap no-thumb">
+          <img class="info-thumb info-lesson-thumb" alt="" />
+        </div>
+      </div>
+      <div class="info-init js-info-init">
+        <div class="v info-init-title js-init-title"></div>
+        <div class="v info-init-lead js-init-lead"></div>
+        <div class="v info-init-body js-init-body"></div>
+      </div>
+      <div class="info-lesson-fields js-lesson-fields">
+        <div>
+          <div class="v info-lesson-title js-lesson-title"></div>
+        </div>
+        <div class="info-action">
+          <button class="go-lesson-btn js-go-lesson" type="button">Go to lesson</button>
+        </div>
+        <div>
+          <div class="k">Module</div>
+          <div class="v js-module-title"></div>
+        </div>
+        <div>
+          <div class="v js-chapter-title"></div>
+        </div>
+        <div>
+          <div class="k">Description</div>
+          <div class="v js-lesson-description"></div>
+        </div>
+      </div>
+    </div>
+  `);
+
+  const host = info.node();
+  const root = host.querySelector(".sea-info-lesson");
+  infoLessonRefs = {
+    root,
+    logoWrap: host.querySelector(".info-logo-wrap"),
+    logoThumb: host.querySelector(".info-logo-thumb"),
+    lessonWrap: host.querySelector(".info-lesson-wrap"),
+    lessonThumb: host.querySelector(".info-lesson-thumb"),
+    initTitle: host.querySelector(".js-init-title"),
+    initLead: host.querySelector(".js-init-lead"),
+    initBody: host.querySelector(".js-init-body"),
+    lessonFields: host.querySelector(".js-lesson-fields"),
+    lessonTitle: host.querySelector(".js-lesson-title"),
+    chapterTitle: host.querySelector(".js-chapter-title"),
+    moduleTitle: host.querySelector(".js-module-title"),
+    lessonDescription: host.querySelector(".js-lesson-description"),
+    goLessonBtn: host.querySelector(".js-go-lesson"),
+  };
+  return infoLessonRefs;
+}
+
+function renderInfoInit() {
+  const refs = ensureLessonInfoView();
+  setInfoMode(refs, "init");
+
+  refs.initTitle.textContent = String(SEA_OPTIONS.infoInitTitle || "Sustainable Energy Academy");
+  refs.initLead.textContent = String(SEA_OPTIONS.infoInitLead || "Explore the lesson map.");
+  refs.initBody.textContent = String(SEA_OPTIONS.infoInitBody || "Hover or click lessons and dimensions to inspect how content clusters by policy, technology, finance, equity, data, and implementation.");
+
+  refs.goLessonBtn.removeAttribute("data-lesson-id");
+  const logoSrc = String(SEA_OPTIONS.logoUrl || "logo.png");
+  setThumbState(refs.logoWrap, refs.logoThumb, {
+    src: logoSrc,
+    alt: "Sustainable Energy Academy logo",
+  });
+  setThumbState(refs.lessonWrap, refs.lessonThumb, {
+    src: "",
+    alt: "",
+  });
+}
+
+function renderInfo(node, themes) {
+  if (!node) {
+    renderInfoInit();
+    return;
+  }
+
+  const refs = ensureLessonInfoView();
+  setInfoMode(refs, "lesson");
+  refs.lessonTitle.textContent = formatLessonTitle(node);
+  refs.chapterTitle.textContent = node.chapter_title || "";
+  refs.moduleTitle.textContent = node.module_title || "";
+  refs.lessonDescription.textContent = node.lesson_description || "";
+  refs.goLessonBtn.setAttribute("data-lesson-id", String(node.lesson_id ?? ""));
+
+  const thumbSrc = node.thumb ? String(node.thumb) : "";
+  setThumbState(refs.lessonWrap, refs.lessonThumb, {
+    src: thumbSrc,
+    alt: thumbSrc ? `Thumbnail for lesson ${node.lesson_id}` : "No thumbnail available",
+  });
+  setThumbState(refs.logoWrap, refs.logoThumb, {
+    src: "",
+    alt: "",
+  });
+}
+
+function renderDimInfo(dim) {
+  if (!dim) {
+    renderInfoInit();
+    return;
+  }
+  clearInfoState();
+  info.html(`
+    <div class="row">
+      <div>
+        <div class="k">Dimension</div>
+        <div class="v">${dim.label || dim.id}</div>
+      </div>
+    </div>
+    <div>
+      <div class="k">Summary</div>
+      <div class="v">${dim.summary || ""}</div>
+    </div>
+    <div>
+      <div class="k">Details</div>
+      <div class="v">${dim.details || ""}</div>
+    </div>
+  `);
+}
+
+// Render the module legend in the right panel.
+function renderLegend(items) {
+  legend.html("");
+  const grid = legend.append("div").attr("class", "legend-grid");
+  const row = grid.selectAll("div.legend-item")
+    .data(items)
+    .join("div")
+    .attr("class", "legend-item");
+  row.append("span")
+    .attr("class", "swatch")
+    .style("background", d => d.color);
+  row.append("span").text(d => d.label);
+}
+
+/* ===== src/geometry.js ===== */
+
+function anchors(themes) {
+  const n = themes.length;
+  return themes.map((d, i) => {
+    const ang = (-Math.PI / 2) + (i * 2 * Math.PI / n);
+    return { ...d, ang, x: cx() + Math.cos(ang) * R(), y: cy() + Math.sin(ang) * R() };
+  });
+}
+
+function angleDiff(a, b) {
+  const d = a - b;
+  return Math.atan2(Math.sin(d), Math.cos(d));
+}
+
+function polygonPoints(A) {
+  return A.map(a => [a.x, a.y]);
+}
+
+// Inset polygon by moving each vertex toward center (simple, robust enough for demo)
+function insetPolygon(poly, pad) {
+  const c = [cx(), cy()];
+  return poly.map(([x,y]) => {
+    const dx = x - c[0], dy = y - c[1];
+    const len = Math.max(1e-6, Math.hypot(dx,dy));
+    const nx = x - (dx/len) * pad;
+    const ny = y - (dy/len) * pad;
+    return [nx, ny];
+  });
+}
+
+// Half-plane form for each edge (normal pointing inward)
+function polygonHalfPlanes(poly) {
+  const planes = [];
+  for (let i=0;i<poly.length;i++){
+    const [x1,y1] = poly[i];
+    const [x2,y2] = poly[(i+1)%poly.length];
+    const ex = x2-x1, ey = y2-y1;
+    // inward normal: rotate edge by -90 then orient toward center
+    let nx = ey, ny = -ex;
+    const mx = (x1+x2)/2, my = (y1+y2)/2;
+    const toC = [cx()-mx, cy()-my];
+    if (nx*toC[0] + ny*toC[1] < 0) { nx=-nx; ny=-ny; }
+    const nlen = Math.max(1e-6, Math.hypot(nx,ny));
+    nx/=nlen; ny/=nlen;
+    const c0 = nx*x1 + ny*y1; // plane: nx*x + ny*y >= c0
+    planes.push({nx, ny, c0});
+  }
+  return planes;
+}
+
+// Project a point back into polygon safe region using half-plane distances
+function clampToPolygon(p, planes) {
+  let x = p.x, y = p.y;
+  for (let iter=0; iter<2; iter++) {
+    for (const pl of planes) {
+      const d = pl.nx*x + pl.ny*y - pl.c0;
+      if (d < 0) {
+        // push inward
+        x += (-d) * pl.nx;
+        y += (-d) * pl.ny;
+      }
+    }
+  }
+  p.x = x; p.y = y;
+}
+
+// Soft barrier keeps nodes from sticking to edges
+function softBarrier(node, planes, margin) {
+  let dmin = Infinity;
+  let nxIn = 0, nyIn = 0;
+  for (const pl of planes) {
+    const d = pl.nx*node.x + pl.ny*node.y - pl.c0;
+    if (d < dmin) { dmin = d; nxIn = pl.nx; nyIn = pl.ny; }
+  }
+  if (dmin < margin) {
+    const u = Math.max(0, Math.min(1, (margin - dmin) / margin));
+    const inward = u*u;
+    node.vx += nxIn * inward * 0.9;
+    node.vy += nyIn * inward * 0.9;
+  }
+}
+
+/* ===== src/weights.js ===== */
+function normalizeWeights(w) {
+  let s = 0;
+  for (const k of Object.keys(w)) s += w[k];
+  if (s <= 1e-8) {
+    const n = Object.keys(w).length || 1;
+    for (const k of Object.keys(w)) w[k] = 1/n;
+  } else {
+    for (const k of Object.keys(w)) w[k] /= s;
+  }
+}
+
+function minMaxNormalize(nodes, themes) {
+  const mins = {}, maxs = {};
+  themes.forEach(t => { mins[t.id]=Infinity; maxs[t.id]=-Infinity; });
+  nodes.forEach(n => {
+    themes.forEach(t => {
+      const v = n.weights?.[t.id] ?? 0;
+      if (v < mins[t.id]) mins[t.id]=v;
+      if (v > maxs[t.id]) maxs[t.id]=v;
+    });
+  });
+  nodes.forEach(n => {
+    n.wDimNorm = {};
+    themes.forEach(t => {
+      const v = n.weights?.[t.id] ?? 0;
+      const den = (maxs[t.id] - mins[t.id]) || 1;
+      n.wDimNorm[t.id] = (v - mins[t.id]) / den;
+    });
+  });
+}
+
+function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s += a[i]*b[i]; return s; }
+
+function buildWeightMatrix(nodes, themes, useNorm=true) {
+  const W = nodes.map(n => {
+    const row = [];
+    for (const d of themes) row.push(useNorm ? (n.wDimNorm?.[d.id] ?? 0) : (n.weights?.[d.id] ?? 0));
+    return row;
+  });
+  const norms = W.map(r => r.reduce((s,v) => s + v*v, 0));
+  return { W, norms };
+}
+
+function makeSimilarity() {
+  // Gaussian kernel on squared Euclidean distance in weight space
+  const sigma = 0.044;
+  return (n, h) => {
+    const d2 = n.__wnorm + h.__wnorm - 2 * dot(n.__wrow, h.__wrow);
+    const sim = Math.exp(-d2 / sigma);
+    return Math.max(0, Math.min(1, sim));
+  };
+}
+
+/* ===== src/links.js ===== */
+
+function buildTopologyLinks(nodes) {
+  const links = [];
+  for (let i=0;i<nodes.length;i++){
+    const a = nodes[i];
+    let best = [];
+    for (let j=0;j<nodes.length;j++){
+      if (i===j) continue;
+      const b = nodes[j];
+      const dx = a.__baseTx - b.__baseTx;
+      const dy = a.__baseTy - b.__baseTy;
+      const dd = dx*dx + dy*dy;
+      best.push({b, dd});
+    }
+    best.sort((x,y)=>x.dd-y.dd);
+    for (let k=0;k<Math.min(CONFIG.topoNeighbors, best.length);k++) {
+      links.push({source: a.lesson_id, target: best[k].b.lesson_id, kind:"topo"});
+    }
+  }
+  return links;
+}
+
+function buildDimTopLinks(nodes, themes) {
+  const links = [];
+  for (const dim of themes) {
+    const ranked = nodes.slice().sort((a,b)=> (b.wDimNorm?.[dim.id] ?? 0) - (a.wDimNorm?.[dim.id] ?? 0));
+    ranked.slice(0, CONFIG.dimTopK).forEach(n => {
+      links.push({source: dim.id, target: n.lesson_id, kind:"dim", dim: dim.id});
+    });
+  }
+  return links;
+}
+
+/* ===== src/state.js ===== */
+
+const State = {
+  dimActivatedAt: 0,
+  // focus: dimension or node
+  activeDim: null,
+  lockedDim: null,
+  hoverNode: null,
+  lockedNode: null,
+  hoverPointer: null,      // {x,y} for gentle follow
+  suppressNextClick: false,
+  clickStartedOnNode: false,
+  hoverDimArc: null,       // dimension id selected via hover ring
+
+  // smooth ramp for dim emphasis
+  dimBiasScale: 0.0,
+  dimBiasTarget: 0.0,
+};
+const DEFAULT_STATE = JSON.parse(JSON.stringify(State));
+
+function clearFocus() {
+  if (State.lockedNode) {
+    State.lockedNode.fx = null;
+    State.lockedNode.fy = null;
+  }
+  State.activeDim = null;
+  State.dimActivatedAt = performance.now();
+  State.lockedDim = null;
+  State.dimActivatedAt = performance.now();
+  State.hoverNode = null;
+  State.lockedNode = null;
+  State.hoverPointer = null;
+}
+
+function setDim(dimId, lock=false) {
+  const prevDim = (State.lockedDim ?? State.activeDim);
+  const wasLocked = (State.lockedDim === dimId);
+
+  if (lock && dimId && prevDim === dimId && !wasLocked) {
+    // Lock the currently-hovered dim without changing strength or restart.
+    State.lockedDim = dimId;
+    State.activeDim = dimId;
+    State.dimBiasTarget = State.dimBiasScale;
+    return;
+  }
+
+  if (lock) {
+    if (State.lockedDim === dimId) {
+      State.lockedDim = null;
+      State.activeDim = null;
+    } else {
+      State.lockedDim = dimId;
+      State.activeDim = dimId;
+      State.lockedNode = null; // locking a dim clears node lock
+    }
+  } else {
+    if (State.lockedDim) return;
+    State.activeDim = dimId;
+  }
+  if ((State.lockedDim ?? State.activeDim) !== prevDim) {
+    State.dimActivatedAt = performance.now();
+  }
+  State.dimBiasTarget = State.activeDim ? CONFIG.dimBiasMax : 0.0;
+}
+
+function setHoverNode(n, pointer=null) {
+  State.hoverNode = n;
+  State.hoverPointer = pointer;
+}
+
+function lockNode(n) {
+  State.lockedNode = n;
+  n.fx = n.x;
+  n.fy = n.y;
+  n.vx = 0;
+  n.vy = 0;
+  State.hoverNode = null;
+  State.hoverPointer = null;
+  State.lockedDim = null;
+  State.activeDim = null;
+  State.dimBiasTarget = 0.0;
+}
+
+function unlockNode() {
+  if (State.lockedNode) { State.lockedNode.fx = null; State.lockedNode.fy = null; }
+  State.lockedNode = null;
+}
+
+function resetState() {
+  if (State.lockedNode) {
+    State.lockedNode.fx = null;
+    State.lockedNode.fy = null;
+  }
+  Object.keys(State).forEach((k) => {
+    State[k] = DEFAULT_STATE[k];
+  });
+}
+
+/* ===== src/main.js ===== */
 /* 
 SEA Lesson Map (D3) — Refactored from v46 (stable baseline)
 
@@ -17,23 +634,115 @@ Implementation notes (handover)
 - There is no label layer on nodes (intentionally removed for robustness).
 */
 
-import { CONFIG } from "./config.js";
-import { svg, initLayout, cx, cy, R } from "./layout.js";
-import { tooltip, buildTooltipHTML, renderInfo, renderDimInfo, renderLegend } from "./ui.js";
-import { anchors, angleDiff, polygonPoints, insetPolygon, polygonHalfPlanes, clampToPolygon, softBarrier } from "./geometry.js";
-import { normalizeWeights, minMaxNormalize, buildWeightMatrix, makeSimilarity } from "./weights.js";
-import { buildTopologyLinks, buildDimTopLinks } from "./links.js";
-import { State, clearFocus, setDim, setHoverNode, lockNode } from "./state.js";
+const DEFAULT_SEA_OPTIONS = {
+  dataDir: "data",
+  dataUrls: {},
+  data: {},
+  minHeight: 520,
+  logoUrl: "logo.png",
+  infoInitTitle: "Sustainable Energy Academy",
+  infoInitLead: "Explore the lesson map.",
+  infoInitBody: "Hover or click lessons and dimensions to inspect how content clusters by policy, technology, finance, equity, data, and implementation.",
+};
+let SEA_OPTIONS = { ...DEFAULT_SEA_OPTIONS };
+const DATA_FILES = {
+  graphConfig: "sea_network_graph_config.json",
+  moduleStructure: "module_structure.json",
+};
 
-initLayout();
+function resetConfig() {
+  Object.keys(CONFIG).forEach((k) => {
+    if (!(k in DEFAULT_CONFIG)) delete CONFIG[k];
+  });
+  Object.keys(DEFAULT_CONFIG).forEach((k) => {
+    const v = DEFAULT_CONFIG[k];
+    CONFIG[k] = (v && typeof v === "object") ? JSON.parse(JSON.stringify(v)) : v;
+  });
+}
+
+function resolveDataPath(file) {
+  const base = String(SEA_OPTIONS.dataDir || "data").replace(/\/+$/, "");
+  return `${base}/${file}`;
+}
+
+// Data lookup order is deterministic to make CMS migration straightforward:
+// 1) in-memory data passed by host app (SEA_OPTIONS.data)
+// 2) explicit per-file URLs (SEA_OPTIONS.dataUrls)
+// 3) local relative fallback (SEA_OPTIONS.dataDir + default filename)
+function resolveDataUrl(key) {
+  const urls = SEA_OPTIONS.dataUrls || {};
+  if (urls[key]) return urls[key];
+  return resolveDataPath(DATA_FILES[key]);
+}
+
+async function loadJsonData(key) {
+  const inline = SEA_OPTIONS.data || {};
+  if (inline[key] != null) return inline[key];
+  return d3.json(resolveDataUrl(key));
+}
+
+function setConfigByPath(target, path, value) {
+  const parts = String(path || "").split(".").map(p => p.trim()).filter(Boolean);
+  if (!parts.length) return false;
+  let obj = target;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const k = parts[i];
+    if (!(k in obj) || typeof obj[k] !== "object" || obj[k] == null) return false;
+    obj = obj[k];
+  }
+  const leaf = parts[parts.length - 1];
+  if (!(leaf in obj)) return false;
+  obj[leaf] = value;
+  return true;
+}
+
+function normalizeConfigValue(value) {
+  if (typeof value !== "string") return value;
+  const raw = value.trim();
+  if (!raw) return value;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : value;
+}
+
+function applyConfigObject(prefix, value) {
+  if (value == null) return;
+  if (Array.isArray(value)) {
+    if (!setConfigByPath(CONFIG, prefix, value)) {
+      console.warn(`Unknown tuning key: ${prefix}`);
+    }
+    return;
+  }
+  if (typeof value === "object") {
+    Object.entries(value).forEach(([k, v]) => {
+      const path = prefix ? `${prefix}.${k}` : k;
+      applyConfigObject(path, v);
+    });
+    return;
+  }
+  if (!setConfigByPath(CONFIG, prefix, normalizeConfigValue(value))) {
+    console.warn(`Unknown tuning key: ${prefix}`);
+  }
+}
+
+function applyGraphConfigTuning(graphConfig) {
+  const tuning = graphConfig?.tuning;
+  if (!tuning || typeof tuning !== "object") {
+    console.warn("Graph config tuning not found; using in-code defaults.");
+    return;
+  }
+  Object.entries(tuning).forEach(([k, v]) => applyConfigObject(k, v));
+}
 
 /* =========================
    7) Main: Load Data + Build Scene
    ========================= */
 
 async function main() {
+  const graphConfig = await loadJsonData("graphConfig");
+  applyGraphConfigTuning(graphConfig);
+
   // Build order: geometry → anchors → data → links → nodes → interaction → simulation
-  const dimMeta = await d3.json("data/dimensions.json");
+  const dimMeta = { dimensions: Array.isArray(graphConfig?.dimensions) ? graphConfig.dimensions : [] };
   const THEMES = (dimMeta?.dimensions || []).map(d => ({ id: d.id, label: d.label || d.id }));
   const dimMap = new Map((dimMeta?.dimensions || []).map(d => [d.id, d]));
 
@@ -172,8 +881,8 @@ async function main() {
 
   /* ---------- 7.3 Data ---------- */
   // Load nodes
-  const nodesRaw = await d3.json("data/sea_lesson_theme_weights.json");
-  const moduleStructure = await d3.json("data/module_structure.json");
+  const nodesRaw = Array.isArray(graphConfig?.weights) ? graphConfig.weights : [];
+  const moduleStructure = await loadJsonData("moduleStructure");
 
   // Map thumbnails from module_structure.json
   function buildThumbMap(structure) {
@@ -358,6 +1067,7 @@ async function main() {
   /* ---------- 7.6 Interaction: nodes ---------- */
 
   function showTooltip(event, d) {
+    tooltip.interrupt();
     tooltip.html(buildTooltipHTML(d))
       .style("left", (event.pageX + 12) + "px")
       .style("top", (event.pageY - 12) + "px")
@@ -366,7 +1076,14 @@ async function main() {
   }
 
   function hideTooltip() {
-    tooltip.transition().duration(120).style("opacity", 0);
+    tooltip.interrupt();
+    tooltip
+      .transition()
+      .duration(120)
+      .style("opacity", 0)
+      .on("end", () => {
+        tooltip.style("left", "-9999px").style("top", "-9999px");
+      });
   }
 
   function nodeEnter(event, d) {
@@ -388,7 +1105,6 @@ async function main() {
     State.hoverNode = null;
     State.hoverPointer = null;
     hideTooltip();
-    if (!State.lockedNode) renderInfo(null);
     styleAll();
     kickSim(0.22);
   }
@@ -886,20 +1602,10 @@ function dimMoveRamp() {
 
   // Initial styling
   styleAll();
-  // DEV: expose live config for tuning panel
-  window.__SEA = { CONFIG, kick: (a=0.55) => kickSim(a), setConfig: (patch) => {
-    Object.assign(CONFIG, patch||{});
-    if (sim) {
-      sim.force("collide")
-        .strength(CONFIG.collideStrength)
-        .radius(collideRadius);
-      updateHeartbeat();
-    }
-  }, __prevCx: cx(), __prevCy: cy() };
+  let prevCx = cx();
+  let prevCy = cy();
 
-  window.__rerender = () => {
-    const prevCx = window.__SEA?.__prevCx ?? cx();
-    const prevCy = window.__SEA?.__prevCy ?? cy();
+  rerenderHandler = () => {
     const dx = cx() - prevCx;
     const dy = cy() - prevCy;
 
@@ -935,13 +1641,109 @@ function dimMoveRamp() {
     // Update base targets for new center/anchors
     recomputeBaseTargets();
 
-    if (window.__SEA) {
-      window.__SEA.__prevCx = cx();
-      window.__SEA.__prevCy = cy();
-    }
+    prevCx = cx();
+    prevCy = cy();
     kickSim(0.35);
+  };
+
+  return {
+    // Runtime-level cleanup used by integration-level destroy().
+    // Stops forces and unbinds per-instance SVG handlers.
+    destroy() {
+      rerenderHandler = null;
+      svg.on("mousemove", null).on("mouseleave", null).on("click", null);
+      if (sim) {
+        sim.stop();
+        sim = null;
+      }
+      if (!svg.empty()) {
+        svg.selectAll("*").interrupt();
+      }
+    },
   };
 }
 
-/* Entry */
-main().catch(err => console.error(err));
+let activeInstance = null;
+let createToken = 0;
+
+/*
+Host API
+--------
+window.createSEALessonMap(options) -> Promise<instance>
+
+Options:
+- container: string | Element (required in embedded apps)
+- dataDir: base path fallback for files
+- dataUrls: per-file URL overrides { graphConfig, moduleStructure }
+- data: optional in-memory payloads with same keys as dataUrls
+- minHeight: minimum mount height for generated svg host
+
+Instance:
+- svg: mounted svg DOM node
+- config: live config object for diagnostics
+- destroy(): full cleanup for React unmount/toggle transitions
+*/
+async function createSEALessonMap(options = {}) {
+  const token = ++createToken;
+  if (activeInstance && typeof activeInstance.destroy === "function") {
+    activeInstance.destroy();
+  }
+
+  resetConfig();
+  resetState();
+  SEA_OPTIONS = {
+    ...DEFAULT_SEA_OPTIONS,
+    ...options,
+  };
+  setupMount(SEA_OPTIONS);
+  renderInfoInit();
+  ensureTooltip();
+  info.on("click.seaGoLesson", (event) => {
+    const btn = event.target?.closest?.(".go-lesson-btn");
+    if (!btn) return;
+    const lessonId = btn.getAttribute("data-lesson-id");
+    if (!lessonId) return;
+    console.log(lessonId);
+  });
+  initLayout();
+  const runtime = await main();
+  if (token !== createToken) {
+    if (runtime && typeof runtime.destroy === "function") runtime.destroy();
+    return {
+      svg: null,
+      config: CONFIG,
+      destroy() {},
+    };
+  }
+
+  let destroyed = false;
+  const instance = {
+    svg: svg.node(),
+    config: CONFIG,
+    // Integration-level cleanup:
+    // removes listeners, tooltip, simulation and mounted svg content.
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      if (runtime && typeof runtime.destroy === "function") runtime.destroy();
+      teardownLayout();
+      teardownTooltip();
+      info.on("click.seaGoLesson", null);
+      if (widgetRoot && widgetRoot.parentNode) {
+        widgetRoot.parentNode.removeChild(widgetRoot);
+      } else if (!svg.empty()) {
+        svg.selectAll("*").remove();
+      }
+      svg = d3.select(null);
+      info = d3.select(null);
+      legend = d3.select(null);
+      mountEl = null;
+      widgetRoot = null;
+      if (activeInstance === instance) activeInstance = null;
+    },
+  };
+  activeInstance = instance;
+  return instance;
+}
+
+window.createSEALessonMap = createSEALessonMap;
