@@ -1,0 +1,25 @@
+{
+  "name": "@undp/sea-network-widget",
+  "version": "1.0.0",
+  "description": "Self-contained SEA lesson network visualization widget",
+  "main": "script.js",
+  "module": "index.mjs",
+  "browser": "script.js",
+  "exports": {
+    ".": {
+      "import": "./index.mjs",
+      "require": "./script.js",
+      "default": "./index.mjs"
+    }
+  },
+  "files": [
+    "index.mjs",
+    "script.js",
+    "README.txt",
+    "logo.png",
+    "data/sea_network_graph_config.json",
+    "data/module_structure.json"
+  ],
+  "sideEffects": true,
+  "license": "UNLICENSED"
+}

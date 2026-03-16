@@ -9,20 +9,22 @@ Primary goals:
 - Embed inside another application (React page is the target integration).
 - Support clean mount/unmount cycles (including UI toggles between this view and another interface).
 - Allow data source migration from local files to CMS endpoints with minimal integration changes.
+- Minimize host-app integration surface (self-contained styles, tooltip containment, dependency flexibility).
 
 Current implementation status:
 - Single runtime script (`script.js`).
 - Single graph data config (`data/sea_network_graph_config.json`) containing dimensions, lesson weights, and tuning.
 - Lifecycle-safe API with explicit `create` and `destroy`.
 - Data source abstraction supports in-memory data, CMS URLs, or local fallback files.
+- Styles are widget-scoped (`.sea-widget ...`) to avoid host-app CSS bleed.
+- Tooltip is rendered inside the widget container (not attached to `body`).
+- D3 can be injected from host bundle or auto-loaded by the widget.
 
 
 2. Repository Layout
 --------------------
 - `index.html`
   Minimal demo host (visualization-only shell).
-- `style.css`
-  Minimal visualization and tooltip styles.
 - `script.js`
   Full runtime (data loading, layout, simulation, rendering, interactions, lifecycle).
 - `data/sea_network_graph_config.json`
@@ -33,8 +35,9 @@ Current implementation status:
 
 3. Runtime API (Vendor Integration Contract)
 --------------------------------------------
-Global entrypoint:
-- `window.createSEALessonMap(options) -> Promise<instance>`
+Entrypoint:
+- `createSEALessonMap(options) -> Promise<instance>` (npm import)
+- `window.createSEALessonMap(options) -> Promise<instance>` (browser global fallback)
 
 Instance shape:
 - `instance.svg`: mounted SVG DOM node
@@ -44,6 +47,7 @@ Instance shape:
 Important behavior:
 - No auto-init in `script.js`.
 - Calling `createSEALessonMap()` again destroys any prior active instance automatically.
+- The runtime mounts a single self-contained widget (viz + info panel + legend) inside `options.container`.
 
 
 4. Options Reference
@@ -74,6 +78,56 @@ Important behavior:
 - Type: `number`
 - Default: `520`
 - Purpose: minimum mount height for generated/mounted visualization host.
+
+`options.d3`
+- Type: `object | null`
+- Default: `null`
+- Purpose: pass an injected D3 instance from host app/bundle.
+
+`options.autoLoadD3`
+- Type: `boolean`
+- Default: `true`
+- Purpose: load D3 automatically when not injected/global.
+
+`options.d3Url`
+- Type: `string`
+- Default: `"https://d3js.org/d3.v7.min.js"`
+- Purpose: source URL for D3 when `autoLoadD3` is enabled.
+
+`options.useShadowDom`
+- Type: `boolean`
+- Default: `true`
+- Purpose: mount widget in a Shadow DOM root for stronger CSS isolation from host app.
+
+`options.injectStyles`
+- Type: `boolean`
+- Default: `true`
+- Purpose: inject built-in scoped widget CSS automatically.
+
+`options.styles`
+- Type: `string`
+- Default: `""` (uses built-in CSS)
+- Purpose: provide a custom CSS string (used when `injectStyles` is enabled).
+
+`options.logoUrl`
+- Type: `string`
+- Default: `"logo.png"`
+- Purpose: logo used in the info panel reset/init state.
+
+`options.infoInitTitle`
+- Type: `string`
+- Default: `"Sustainable Energy Academy"`
+- Purpose: init-state heading in the info panel.
+
+`options.infoInitLead`
+- Type: `string`
+- Default: `"Explore the lesson map."`
+- Purpose: short init-state lead line in the info panel.
+
+`options.infoInitBody`
+- Type: `string`
+- Default: descriptive onboarding text in the info panel.
+- Purpose: longer init-state description text.
 
 
 5. Data Resolution Logic (CMS Transition)
@@ -120,6 +174,7 @@ Implication:
   - lesson thumbnail resolution
 - Module color source of truth:
   - `module.color`
+- If `module.color` is missing, runtime uses a deterministic fallback palette.
 
 6.4 `graphConfig.tuning` payload
 - JSON object keyed by config names.
@@ -163,18 +218,24 @@ Use `destroy()` in `useEffect` cleanup.
 
 ```jsx
 import { useEffect, useRef } from "react";
+import * as d3 from "d3";
+import { createSEALessonMap } from "@undp/sea-network-widget";
 
 export function SeaViz({ visible }) {
   const hostRef = useRef(null);
 
   useEffect(() => {
-    if (!visible || !hostRef.current || !window.createSEALessonMap) return;
+    if (!visible || !hostRef.current) return;
 
     let instance;
     let cancelled = false;
 
-    window.createSEALessonMap({
+    createSEALessonMap({
       container: hostRef.current,
+      d3,
+      autoLoadD3: false,
+      useShadowDom: true,
+      injectStyles: true,
       dataUrls: {
         graphConfig: "/api/cms/sea/network-graph-config",
         moduleStructure: "/api/cms/sea/module-structure",
@@ -198,6 +259,11 @@ export function SeaViz({ visible }) {
 }
 ```
 
+Dependency notes:
+- Preferred in React/Next apps: pass bundled D3 via `options.d3` and set `autoLoadD3: false`.
+- If not provided, runtime can auto-load D3 from `options.d3Url` (`autoLoadD3: true`).
+- CSS is injected by the widget (`injectStyles: true`), so no global stylesheet import is required.
+
 
 10. Lifecycle / Cleanup Semantics
 ---------------------------------
@@ -216,7 +282,9 @@ This is required for toggle flows and route transitions.
 -------------------------------------
 - Host container should provide explicit width/height.
 - Runtime sets SVG to 100% width/height within container.
-- Tooltip uses `position:absolute` on `body`; ensure host stacking context does not hide it.
+- Default integration uses Shadow DOM (`useShadowDom: true`) + scoped CSS injection.
+- Widget CSS is scoped under `.sea-widget`, so it should not affect host page styles when Shadow DOM is disabled.
+- Tooltip is positioned absolutely within `.sea-widget`, so it does not alter page layout/scroll.
 
 
 12. Tuning Guide
@@ -259,8 +327,20 @@ Unexpected config:
 
 15. Vendor Handoff Checklist
 ----------------------------
-- Confirm host app can call `window.createSEALessonMap`.
+- Confirm host app can call `createSEALessonMap` (via npm import or global fallback).
 - Confirm mount/unmount path calls `destroy()`.
 - Confirm CMS endpoints configured for `graphConfig` and `moduleStructure`.
 - Confirm one successful mount with visible data and interactions.
 - Confirm toggle away/toggle back does not duplicate listeners or instances.
+
+
+16. NPM Package Handoff
+-----------------------
+- Package manifest: `package.json`
+- Entry points:
+  - CommonJS: `script.js`
+  - ESM: `index.mjs`
+- To create a distributable tarball for vendor testing:
+  - `npm pack`
+- To consume in app code:
+  - `import { createSEALessonMap } from "@undp/sea-network-widget"`

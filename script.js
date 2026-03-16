@@ -46,11 +46,192 @@ const CONFIG = {
   dimTopRepelStrength: 0.35,
 };
 const DEFAULT_CONFIG = JSON.parse(JSON.stringify(CONFIG));
+const FALLBACK_MODULE_COLORS = [
+  "#00C1FF",
+  "#02A38A",
+  "#59BA47",
+  "#FBC412",
+  "#E78625",
+  "#E05258",
+  "#1F5A95",
+  "#757AF0",
+  "#006AB5",
+];
+const SEA_WIDGET_CSS = `
+.sea-widget {
+  --sea-text: #e8ecff;
+  --sea-muted: rgba(232,236,255,0.72);
+  --sea-fainter: rgba(232,236,255,0.08);
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 14px;
+  padding: 14px;
+  overflow: hidden;
+  color: var(--sea-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+}
+.sea-widget, .sea-widget * { box-sizing: border-box; }
+.sea-widget .sea-widget-main { flex: 1 1 auto; min-width: 620px; min-height: 0; overflow: hidden; }
+.sea-widget .sea-widget-viz, .sea-widget .sea-widget-viz > svg { width: 100%; height: 100%; min-height: 520px; }
+.sea-widget .sea-widget-viz > svg {
+  display: block;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+  border: 1px solid var(--sea-fainter);
+  border-radius: 14px;
+}
+.sea-widget .sea-widget-side {
+  flex: 0 0 clamp(320px, 34vw, 360px);
+  width: clamp(320px, 34vw, 360px);
+  max-width: clamp(320px, 34vw, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.sea-widget .panel { border: 1px solid var(--sea-fainter); border-radius: 12px; background: rgba(255,255,255,0.02); overflow: hidden; }
+.sea-widget .info-panel { display: flex; flex-direction: column; flex: 1 1 clamp(320px, 56vh, 620px); min-height: 0; overflow: hidden; }
+.sea-widget .info-panel .panel-body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.sea-widget .legend-panel { margin-top: 0; flex: 0 0 auto; }
+.sea-widget .panel-title { padding: 10px 12px; border-bottom: 1px solid var(--sea-fainter); color: var(--sea-muted); font-size: 12px; font-weight: 650; }
+.sea-widget .panel-body { padding: 12px; }
+.sea-widget .empty { color: var(--sea-muted); font-size: 13px; line-height: 1.35; }
+.sea-widget .k { color: var(--sea-muted); font-size: 11px; }
+.sea-widget .v { color: var(--sea-text); font-size: 14px; line-height: 1.25; }
+.sea-widget .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 8px 0; }
+.sea-widget .sea-info-lesson { display: flex; flex-direction: column; gap: 8px; height: 100%; }
+.sea-widget .info-media { position: relative; }
+.sea-widget .info-init, .sea-widget .info-lesson-fields { display: none; }
+.sea-widget .sea-info-lesson.mode-init .info-init { display: flex; flex-direction: column; gap: 8px; }
+.sea-widget .sea-info-lesson.mode-init .info-logo-wrap { display: block; }
+.sea-widget .sea-info-lesson.mode-init .info-lesson-wrap { display: none; }
+.sea-widget .sea-info-lesson.mode-lesson .info-lesson-fields { display: flex; flex-direction: column; gap: 8px; }
+.sea-widget .sea-info-lesson.mode-lesson .info-logo-wrap { display: none; }
+.sea-widget .sea-info-lesson.mode-lesson .info-lesson-wrap { display: block; }
+.sea-widget .info-init-title { font-size: 16px; font-weight: 700; line-height: 1.25; }
+.sea-widget .info-init-lead { font-size: 14px; font-weight: 600; line-height: 1.3; color: rgba(232,236,255,0.90); }
+.sea-widget .info-init-body { font-size: 12px; line-height: 1.45; color: rgba(232,236,255,0.74); max-height: 5.8em; overflow: hidden; }
+.sea-widget .info-lesson-title { font-size: 15px; font-weight: 650; line-height: 1.3; }
+.sea-widget .info-thumb-wrap { margin-bottom: 2px; position: relative; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); overflow: hidden; }
+.sea-widget .info-logo-wrap { height: clamp(128px, 22vh, 176px); }
+.sea-widget .info-lesson-wrap { height: clamp(118px, 18vh, 140px); }
+.sea-widget .info-thumb { width: 100%; height: 100%; object-fit: cover; object-position: center center; display: block; }
+.sea-widget .info-logo-wrap .info-thumb { object-fit: contain; padding: 0; }
+.sea-widget .info-thumb-wrap.no-thumb .info-thumb { opacity: 0; }
+.sea-widget .info-thumb-wrap.no-thumb::after { content: "No thumbnail"; position: absolute; inset: 0; display: grid; place-items: center; color: rgba(232,236,255,0.56); font-size: 12px; }
+.sea-widget .info-logo-wrap.no-thumb::after { content: "Logo unavailable"; }
+.sea-widget .info-action { margin-top: 4px; }
+.sea-widget .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.sea-widget .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(232,236,255,0.82); }
+.sea-widget .swatch { width: 10px; height: 10px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.18); }
+.sea-widget .sea-tooltip {
+  pointer-events: none;
+  position: absolute;
+  z-index: 20;
+  background: rgba(10,14,28,0.92);
+  border: 1px solid rgba(232,236,255,0.14);
+  color: rgba(232,236,255,0.95);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  max-width: 340px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+}
+.sea-widget .sea-tooltip .t { font-weight: 650; margin-bottom: 2px; }
+.sea-widget .sea-tooltip .s { color: rgba(232,236,255,0.72); line-height: 1.25; }
+.sea-widget .tipRow { display: flex; gap: 10px; align-items: flex-start; }
+.sea-widget .thumb { width: 54px; height: 54px; object-fit: cover; border-radius: 10px; flex: 0 0 auto; opacity: 0.95; }
+.sea-widget .tipText { min-width: 0; }
+.sea-widget .go-lesson-btn {
+  appearance: none;
+  border: 1px solid rgba(232,236,255,0.26);
+  background: rgba(232,236,255,0.08);
+  color: rgba(232,236,255,0.95);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sea-widget .go-lesson-btn:hover { background: rgba(232,236,255,0.14); }
+.sea-widget .dimHit { pointer-events: all; }
+.sea-widget .dimTop { stroke: rgba(255,255,255,0.92) !important; stroke-width: 2.4px !important; }
+@media (max-width: 980px) {
+  .sea-widget { flex-direction: column; }
+  .sea-widget .sea-widget-main { min-width: 0; height: 66vh; }
+  .sea-widget .sea-widget-side { flex: 0 0 auto; width: 100%; max-width: 100%; height: auto; }
+  .sea-widget .info-panel { flex: 0 0 auto; max-height: 48vh; }
+}
+`;
+
+let D3 = null;
+let d3LoadPromise = null;
+
+function getGlobalD3() {
+  if (typeof window !== "undefined" && window.d3) return window.d3;
+  if (typeof globalThis !== "undefined" && globalThis.d3) return globalThis.d3;
+  return null;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureD3(options = {}) {
+  if (options.d3) {
+    D3 = options.d3;
+    return;
+  }
+  const globalD3 = getGlobalD3();
+  if (globalD3) {
+    D3 = globalD3;
+    return;
+  }
+  if (options.autoLoadD3 === false) {
+    throw new Error("D3 is not available. Pass options.d3 or enable autoLoadD3.");
+  }
+  if (!d3LoadPromise) {
+    const src = options.d3Url || "https://d3js.org/d3.v7.min.js";
+    d3LoadPromise = loadScript(src);
+  }
+  await d3LoadPromise;
+  const loaded = getGlobalD3();
+  if (!loaded) throw new Error("D3 failed to initialize after script load.");
+  D3 = loaded;
+}
+
+function isSelectionEmpty(sel) {
+  return !sel || sel.empty();
+}
+
+function resolveWidgetCss(options = {}) {
+  if (typeof options.styles === "string" && options.styles.trim()) return options.styles;
+  return SEA_WIDGET_CSS;
+}
+
+function injectWidgetStyles(root, options = {}) {
+  if (!root || options.injectStyles === false) return;
+  const style = document.createElement("style");
+  style.setAttribute("data-sea-widget-style", "true");
+  style.textContent = resolveWidgetCss(options);
+  root.appendChild(style);
+}
 
 /* ===== src/layout.js ===== */
 
-let svg = d3.select(null);
+let svg = null;
 let mountEl = null;
+let mountRoot = null;
 let widgetRoot = null;
 let width = 900;
 let height = 650;
@@ -59,7 +240,7 @@ let resizeHandler = null;
 let rerenderHandler = null;
 
 function resize() {
-  if (svg.empty()) return;
+  if (isSelectionEmpty(svg)) return;
   const rect = svg.node().getBoundingClientRect();
   width = Math.max(640, Math.floor(rect.width));
   height = Math.max(520, Math.floor(rect.height));
@@ -90,8 +271,15 @@ function setupMount(options = {}) {
     ? document.querySelector(options.container)
     : (options.container || defaultHost);
   mountEl = host || document.body;
-
-  if (mountEl.innerHTML != null) mountEl.innerHTML = "";
+  const useShadowDom = (options.useShadowDom !== false) && !!mountEl?.attachShadow;
+  if (useShadowDom) {
+    mountRoot = mountEl.shadowRoot || mountEl.attachShadow({ mode: "open" });
+    if (mountRoot.innerHTML != null) mountRoot.innerHTML = "";
+  } else {
+    mountRoot = mountEl;
+    if (mountRoot && mountRoot.innerHTML != null) mountRoot.innerHTML = "";
+  }
+  injectWidgetStyles(mountRoot, options);
   widgetRoot = document.createElement("div");
   widgetRoot.className = "sea-widget";
 
@@ -120,12 +308,12 @@ function setupMount(options = {}) {
 
   widgetRoot.appendChild(main);
   widgetRoot.appendChild(side);
-  if (mountEl.appendChild) mountEl.appendChild(widgetRoot);
+  if (mountRoot && mountRoot.appendChild) mountRoot.appendChild(widgetRoot);
 
-  svg = d3.select(svgNode);
+  svg = D3.select(svgNode);
   svg.style("width", "100%").style("height", "100%");
-  info = d3.select(side.querySelector(".sea-info-body"));
-  legend = d3.select(side.querySelector(".sea-legend-body"));
+  info = D3.select(side.querySelector(".sea-info-body"));
+  legend = D3.select(side.querySelector(".sea-legend-body"));
 
   if (mountEl.style) {
     if (!mountEl.style.width) mountEl.style.width = "100%";
@@ -139,21 +327,22 @@ const cy = () => height * 0.5;
 const R = () => Math.min(width, height) * CONFIG.polygonRadiusFactor;
 
 /* ===== src/ui.js ===== */
-let tooltip = d3.select(null);
+let tooltip = null;
 
 function ensureTooltip() {
-  if (!tooltip.empty()) return;
-  tooltip = d3.select("body")
+  if (!widgetRoot || !isSelectionEmpty(tooltip)) return;
+  tooltip = D3.select(widgetRoot)
     .append("div")
-    .attr("class", "tooltip")
+    .attr("class", "sea-tooltip")
+    .style("display", "none")
     .style("left", "-9999px")
     .style("top", "-9999px")
     .style("opacity", 0);
 }
 
 function teardownTooltip() {
-  if (!tooltip.empty()) tooltip.remove();
-  tooltip = d3.select(null);
+  if (!isSelectionEmpty(tooltip)) tooltip.remove();
+  tooltip = null;
 }
 
 function buildTooltipHTML(d) {
@@ -166,13 +355,9 @@ function buildTooltipHTML(d) {
   `;
 }
 
-let info = d3.select(null);
-let legend = d3.select(null);
+let info = null;
+let legend = null;
 let infoLessonRefs = null;
-
-function clearInfoState() {
-  infoLessonRefs = null;
-}
 
 function formatLessonTitle(node) {
   const rawTitle = String(node?.lesson_title || "(untitled)");
@@ -214,7 +399,7 @@ function ensureLessonInfoView() {
           <img class="info-thumb info-lesson-thumb" alt="" />
         </div>
       </div>
-      <div class="info-init js-info-init">
+      <div class="info-init">
         <div class="v info-init-title js-init-title"></div>
         <div class="v info-init-lead js-init-lead"></div>
         <div class="v info-init-body js-init-body"></div>
@@ -252,7 +437,6 @@ function ensureLessonInfoView() {
     initTitle: host.querySelector(".js-init-title"),
     initLead: host.querySelector(".js-init-lead"),
     initBody: host.querySelector(".js-init-body"),
-    lessonFields: host.querySelector(".js-lesson-fields"),
     lessonTitle: host.querySelector(".js-lesson-title"),
     chapterTitle: host.querySelector(".js-chapter-title"),
     moduleTitle: host.querySelector(".js-module-title"),
@@ -282,7 +466,7 @@ function renderInfoInit() {
   });
 }
 
-function renderInfo(node, themes) {
+function renderInfo(node) {
   if (!node) {
     renderInfoInit();
     return;
@@ -312,7 +496,7 @@ function renderDimInfo(dim) {
     renderInfoInit();
     return;
   }
-  clearInfoState();
+  infoLessonRefs = null;
   info.html(`
     <div class="row">
       <div>
@@ -619,7 +803,7 @@ function resetState() {
 SEA Lesson Map (D3) — Refactored from v46 (stable baseline)
 
 Purpose
-- Visualize all lessons as nodes inside a 6‑dimensional polygon (one vertex per theme).
+- Visualize all lessons as nodes inside an N-dimensional polygon (one vertex per theme).
 - Nodes drift subtly to feel alive.
 - Hover a node: gentle mouse-follow + similarity reflow (keeps global centroid stable).
 - Click/drag a node: lock selection; drag updates its weights; release returns to drift.
@@ -638,6 +822,12 @@ const DEFAULT_SEA_OPTIONS = {
   dataDir: "data",
   dataUrls: {},
   data: {},
+  d3: null,
+  autoLoadD3: true,
+  d3Url: "https://d3js.org/d3.v7.min.js",
+  useShadowDom: true,
+  injectStyles: true,
+  styles: "",
   minHeight: 520,
   logoUrl: "logo.png",
   infoInitTitle: "Sustainable Energy Academy",
@@ -678,7 +868,7 @@ function resolveDataUrl(key) {
 async function loadJsonData(key) {
   const inline = SEA_OPTIONS.data || {};
   if (inline[key] != null) return inline[key];
-  return d3.json(resolveDataUrl(key));
+  return D3.json(resolveDataUrl(key));
 }
 
 function setConfigByPath(target, path, value) {
@@ -757,7 +947,7 @@ async function main() {
 
   // Outer polygon
   const outerPoly = g.append("path")
-    .attr("d", d3.line().curve(d3.curveLinearClosed)(poly))
+    .attr("d", D3.line().curve(D3.curveLinearClosed)(poly))
     .attr("fill", "rgba(255,255,255,0.015)")
     .attr("stroke", "rgba(232,236,255,0.14)")
     .attr("stroke-width", 1.2);
@@ -859,7 +1049,7 @@ async function main() {
     if (t && t.closest && (t.closest(".node") || t.closest(".dim") || t.closest(".dimLabel"))) {
       return;
     }
-    const p = d3.pointer(event, svg.node());
+    const p = D3.pointer(event, svg.node());
     const dimId = dimArcFromPointer(p);
     if (dimId !== State.hoverDimArc) {
       State.hoverDimArc = dimId;
@@ -975,8 +1165,10 @@ async function main() {
     const num = +String(m.id).replace(/[^\d]/g,"") || +m.id || 0;
     return [num, { title: m.title || `Module ${m.id}`, color: m.color || null }];
   }));
-  const moduleColors = moduleNums.map(num => moduleMeta.get(num)?.color || "#7a86a8");
-  const color = d3.scaleOrdinal(moduleNums, moduleColors);
+  const moduleColors = moduleNums.map((num, idx) =>
+    moduleMeta.get(num)?.color || FALLBACK_MODULE_COLORS[idx % FALLBACK_MODULE_COLORS.length]
+  );
+  const color = D3.scaleOrdinal(moduleNums, moduleColors);
 
   // Legend (module order + colors)
   const legendItems = moduleNums.map(num => ({
@@ -1011,7 +1203,7 @@ async function main() {
 
   function hexPath(r) {
     const a = Math.PI/3;
-    const pts = d3.range(6).map(i => [Math.cos(a*i)*r, Math.sin(a*i)*r]);
+    const pts = D3.range(6).map(i => [Math.cos(a*i)*r, Math.sin(a*i)*r]);
     return "M" + pts.map(p => p.join(",")).join("L") + "Z";
   }
 
@@ -1067,36 +1259,42 @@ async function main() {
   /* ---------- 7.6 Interaction: nodes ---------- */
 
   function showTooltip(event, d) {
+    if (isSelectionEmpty(tooltip) || !widgetRoot) return;
+    const rect = widgetRoot.getBoundingClientRect();
+    const tx = event.clientX - rect.left + 12;
+    const ty = event.clientY - rect.top - 12;
     tooltip.interrupt();
     tooltip.html(buildTooltipHTML(d))
-      .style("left", (event.pageX + 12) + "px")
-      .style("top", (event.pageY - 12) + "px")
+      .style("display", "block")
+      .style("left", tx + "px")
+      .style("top", ty + "px")
       .transition().duration(90)
       .style("opacity", 1);
   }
 
   function hideTooltip() {
+    if (isSelectionEmpty(tooltip)) return;
     tooltip.interrupt();
     tooltip
       .transition()
       .duration(120)
       .style("opacity", 0)
       .on("end", () => {
-        tooltip.style("left", "-9999px").style("top", "-9999px");
+        tooltip.style("display", "none").style("left", "-9999px").style("top", "-9999px");
       });
   }
 
   function nodeEnter(event, d) {
-    const p = d3.pointer(event, svg.node());
+    const p = D3.pointer(event, svg.node());
     setHoverNode(d, {x:p[0], y:p[1]});
     showTooltip(event, d);
-    if (!State.lockedNode) renderInfo(d, THEMES);
+    if (!State.lockedNode) renderInfo(d);
     styleAll();
     kickSim(0.32);
   }
 
   function nodeMove(event, d) {
-    const p = d3.pointer(event, svg.node());
+    const p = D3.pointer(event, svg.node());
     State.hoverPointer = {x:p[0], y:p[1]};
     showTooltip(event, d);
   }
@@ -1118,7 +1316,7 @@ async function main() {
     // Always lock (do not toggle off here). Unlock by clicking the background.
     lockNode(d);
     updateFocusLinks();
-    renderInfo(d, THEMES);
+    renderInfo(d);
     showTooltip(event, d);
     updateDimTop();
     styleAll();
@@ -1133,7 +1331,7 @@ async function main() {
 
     lockNode(d);
     updateFocusLinks();
-    renderInfo(d, THEMES);
+    renderInfo(d);
     showTooltip(event, d);
     updateDimTop();
     styleAll();
@@ -1169,14 +1367,14 @@ async function main() {
     .on("click", nodeClick);
 
   /* Dragging: locks node and lets user reposition (updates weights based on position inside polygon) */
-  const drag = d3.drag()
+  const drag = D3.drag()
     .on("start", (event, d) => {
       /* stopPropagation handled by pointerdown */
       d.__down = { x: event.x, y: event.y, moved: false, dragging: false };
       // Do not lock on down; a pure click should lock via nodeClick.
     })
     .on("drag", (event, d) => {
-      const p = d3.pointer(event, svg.node());
+      const p = D3.pointer(event, svg.node());
       const dx = p[0] - (d.__down?.x ?? p[0]);
       const dy = p[1] - (d.__down?.y ?? p[1]);
       const moved = (dx*dx + dy*dy) > 16; // 4px threshold
@@ -1186,7 +1384,7 @@ async function main() {
         d.__down.dragging = true;
         lockNode(d);
         updateFocusLinks();
-        renderInfo(d, THEMES);
+        renderInfo(d);
         d.fx = d.x;
         d.fy = d.y;
       }
@@ -1571,11 +1769,11 @@ function dimMoveRamp() {
     const moving = (CONFIG.driftStrength > 0) || (CONFIG.jitterStrength > 0) || (State.activeDim != null) || (State.hoverNode != null) || (State.lockedNode != null);
     sim.alphaTarget(moving ? 0.018 : 0.010);
   }
-  sim = d3.forceSimulation(nodes)
+  sim = D3.forceSimulation(nodes)
     .alphaDecay(0.018)
     .velocityDecay(0.38)
-    .force("collide", d3.forceCollide().radius(collideRadius).strength(CONFIG.collideStrength))
-    .force("charge", d3.forceManyBody().strength(-0.9))
+    .force("collide", D3.forceCollide().radius(collideRadius).strength(CONFIG.collideStrength))
+    .force("charge", D3.forceManyBody().strength(-0.9))
     .on("tick", () => {
       applyField(sim.alpha());
       updateHeartbeat();
@@ -1623,7 +1821,7 @@ function dimMoveRamp() {
     planes = polygonHalfPlanes(polySafe);
 
     // Update static geometry
-    outerPoly.attr("d", d3.line().curve(d3.curveLinearClosed)(poly));
+    outerPoly.attr("d", D3.line().curve(D3.curveLinearClosed)(poly));
     hoverRing
       .attr("cx", cx())
       .attr("cy", cy())
@@ -1656,7 +1854,7 @@ function dimMoveRamp() {
         sim.stop();
         sim = null;
       }
-      if (!svg.empty()) {
+      if (!isSelectionEmpty(svg)) {
         svg.selectAll("*").interrupt();
       }
     },
@@ -1676,6 +1874,12 @@ Options:
 - dataDir: base path fallback for files
 - dataUrls: per-file URL overrides { graphConfig, moduleStructure }
 - data: optional in-memory payloads with same keys as dataUrls
+- d3: optional injected D3 instance
+- autoLoadD3: if true, loads D3 from d3Url when not injected/global
+- d3Url: source URL used when autoLoadD3 is enabled
+- useShadowDom: mount widget inside Shadow DOM for style isolation
+- injectStyles: inject built-in widget styles into mount root
+- styles: optional CSS override string used when injectStyles is true
 - minHeight: minimum mount height for generated svg host
 
 Instance:
@@ -1695,6 +1899,7 @@ async function createSEALessonMap(options = {}) {
     ...DEFAULT_SEA_OPTIONS,
     ...options,
   };
+  await ensureD3(SEA_OPTIONS);
   setupMount(SEA_OPTIONS);
   renderInfoInit();
   ensureTooltip();
@@ -1729,15 +1934,18 @@ async function createSEALessonMap(options = {}) {
       teardownLayout();
       teardownTooltip();
       info.on("click.seaGoLesson", null);
-      if (widgetRoot && widgetRoot.parentNode) {
+      if (mountRoot && mountRoot.innerHTML != null) {
+        mountRoot.innerHTML = "";
+      } else if (widgetRoot && widgetRoot.parentNode) {
         widgetRoot.parentNode.removeChild(widgetRoot);
-      } else if (!svg.empty()) {
+      } else if (!isSelectionEmpty(svg)) {
         svg.selectAll("*").remove();
       }
-      svg = d3.select(null);
-      info = d3.select(null);
-      legend = d3.select(null);
+      svg = null;
+      info = null;
+      legend = null;
       mountEl = null;
+      mountRoot = null;
       widgetRoot = null;
       if (activeInstance === instance) activeInstance = null;
     },
@@ -1746,4 +1954,9 @@ async function createSEALessonMap(options = {}) {
   return instance;
 }
 
-window.createSEALessonMap = createSEALessonMap;
+if (typeof window !== "undefined") {
+  window.createSEALessonMap = createSEALessonMap;
+}
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { createSEALessonMap, default: createSEALessonMap };
+}
