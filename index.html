@@ -18,7 +18,10 @@
     window.createSEALessonMap({
       container: "#sea-viz",
       theme: "light",
-      lightModePreset: "1", // Ocean Mist
+      dataUrls: {
+        graphConfig: "./data/sea_network_graph_config.json",
+        moduleStructure: "./data/module_structure.json",
+      },
     }).catch(console.error);
   </script>
 </body>

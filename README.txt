@@ -15,7 +15,7 @@ Current implementation status:
 - Single runtime script (`script.js`).
 - Single graph data config (`data/sea_network_graph_config.json`) containing dimensions, lesson weights, and tuning.
 - Lifecycle-safe API with explicit `create` and `destroy`.
-- Data source abstraction supports in-memory data, CMS URLs, or local fallback files.
+- Data source abstraction supports in-memory data or explicit URLs (CMS or local relative paths).
 - Styles are widget-scoped (`.sea-widget ...`) to avoid host-app CSS bleed.
 - Tooltip is rendered inside the widget container (not attached to `body`).
 - D3 can be injected from host bundle or auto-loaded by the widget.
@@ -42,12 +42,18 @@ Entrypoint:
 Instance shape:
 - `instance.svg`: mounted SVG DOM node
 - `instance.config`: live config object used by runtime
+- `instance.setModuleSelection(moduleId)`: externally activate module mode
+- `instance.clearModuleSelection()`: clear external module mode
+- `instance.getModuleSelection()`: read active external module id (or `null`)
 - `instance.destroy()`: full cleanup for unmount/toggle transitions
 
 Important behavior:
 - No auto-init in `script.js`.
 - Calling `createSEALessonMap()` again destroys any prior active instance automatically.
 - The runtime mounts a single self-contained widget (viz + info panel + legend) inside `options.container`.
+- Global fallback helpers are also available in browser mode:
+  - `window.setSEALessonMapModule(moduleId)`
+  - `window.clearSEALessonMapModule()`
 
 
 4. Options Reference
@@ -57,15 +63,10 @@ Important behavior:
 - Purpose: mount target for visualization.
 - Recommendation: always pass explicit container from host app.
 
-`options.dataDir`
-- Type: `string`
-- Default: `"data"`
-- Purpose: fallback base path for local files.
-
 `options.dataUrls`
 - Type: `object`
 - Keys: `graphConfig`, `moduleStructure`
-- Purpose: per-file URL overrides (typically CMS/API endpoints).
+- Purpose: per-file URLs (typically CMS/API endpoints; local relative URLs are also valid in demo/dev).
 
 `options.data`
 - Type: `object`
@@ -76,11 +77,6 @@ Important behavior:
 - Note: dimension assets (`dimensions[].icon`, `dimensions[].image`) should be provided in `graphConfig`
   so visual assets can be changed from CMS without code changes.
 
-`options.minHeight`
-- Type: `number`
-- Default: `520`
-- Purpose: minimum mount height for generated/mounted visualization host.
-
 `options.d3`
 - Type: `object | null`
 - Default: `null`
@@ -90,66 +86,49 @@ Important behavior:
 - Type: `boolean`
 - Default: `true`
 - Purpose: load D3 automatically when not injected/global.
-
-`options.d3Url`
-- Type: `string`
-- Default: `"https://d3js.org/d3.v7.min.js"`
-- Purpose: source URL for D3 when `autoLoadD3` is enabled.
-
-`options.useShadowDom`
-- Type: `boolean`
-- Default: `true`
-- Purpose: mount widget in a Shadow DOM root for stronger CSS isolation from host app.
-
-`options.injectStyles`
-- Type: `boolean`
-- Default: `true`
-- Purpose: inject built-in scoped widget CSS automatically.
-
-`options.styles`
-- Type: `string`
-- Default: `""` (uses built-in CSS)
-- Purpose: provide a custom CSS string (used when `injectStyles` is enabled).
+- Note: the D3 script URL is internal and hardcoded (not a public option).
 
 `options.theme`
 - Type: `"light" | "dark"`
 - Default: `"light"`
 - Purpose: sets widget visual theme for contrast/background (light recommended on academy pages).
+- Note: `lightModePreset` and other light-variant options are removed; light uses one fixed palette.
 
-`options.lightModePreset`
-- Type: `"1"` ... `"10"`
-- Default: `"1"`
-- Purpose: selects one of 10 light-theme color presets (background/border/label treatment).
+`options.selectedModuleId`
+- Type: `string | number | null`
+- Default: `null`
+- Purpose: optional initial module mode set on first render.
 
-`options.compactBreakpoint`
-- Type: `number`
-- Default: `980`
-- Purpose: switches widget to stacked/compact layout when container width is at or below this value.
+Exact options object (public contract):
+```js
+{
+  container?: string | Element,
+  dataUrls?: {
+    graphConfig?: string,
+    moduleStructure?: string,
+  },
+  data?: {
+    graphConfig?: object,
+    moduleStructure?: object,
+  },
+  d3?: object | null,
+  autoLoadD3?: boolean,
+  theme?: "light" | "dark",
+  selectedModuleId?: string | number | null,
+}
+```
 
-`options.minSimWidth`, `options.minSimHeight`
-- Type: `number`
-- Defaults: `280`, `260`
-- Purpose: minimum internal simulation viewport size for narrow embeds.
+Implementation rule for data:
+- Pass either `data` (already-fetched JSON) or `dataUrls` (widget fetches URLs).
+- If both are present, `data` takes priority.
+- If neither is provided, initialization throws a missing-data-source error.
 
-`options.logoUrl`
-- Type: `string`
-- Default: `"https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png"`
-- Purpose: logo used in the info panel reset/init state.
-
-`options.infoInitTitle`
-- Type: `string`
-- Default: `"Sustainable Energy Academy"`
-- Purpose: init-state heading in the info panel.
-
-`options.infoInitLead`
-- Type: `string`
-- Default: `"Explore the lesson map."`
-- Purpose: short init-state lead line in the info panel.
-
-`options.infoInitBody`
-- Type: `string`
-- Default: descriptive onboarding text in the info panel.
-- Purpose: longer init-state description text.
+Public API note:
+- Unsupported option keys are ignored with a console warning.
+- Layout, simulation, sizing, and force internals are intentionally not exposed as public options.
+- Those behaviors are controlled by built-in defaults + `graphConfig.tuning` in CMS.
+- Shadow DOM mounting and scoped style injection are always enabled internally (not public options).
+- Widget mount min-height is internal and fixed at `520px`.
 
 
 5. Data Resolution Logic (CMS Transition)
@@ -157,9 +136,9 @@ Important behavior:
 Data lookup order is fixed and predictable:
 1. `options.data[key]`
 2. `options.dataUrls[key]`
-3. `options.dataDir + default filename`
+3. if neither is supplied, initialization throws a missing-data-source error
 
-Default file map:
+Expected keys/file names:
 - `graphConfig -> sea_network_graph_config.json`
 - `moduleStructure -> module_structure.json`
 
@@ -219,9 +198,18 @@ Dimension behavior:
 - Click: lock dimension (without re-boosting when already focused via hover).
 - Locked dimension label: orange and bold.
 
+Module behavior (external trigger + in-widget interaction):
+- `setModuleSelection(moduleId)` highlights lessons in that module and shows module info in the panel.
+- Legend highlights the active module in module mode.
+- Selecting a lesson from another module, or clicking away, clears module mode.
+
 Highlight behavior:
 - Top-K dimension nodes highlighted by normalized dimension weight.
 - Locked node and hovered node use fixed-size emphasis.
+
+Tooltip behavior by layout:
+- Wide + medium layouts: lesson tooltips enabled.
+- Small/mobile icon layout: tooltips disabled to avoid overlap/clutter.
 
 Link behavior:
 - Topology links: nearest neighbors by base layout target.
@@ -234,6 +222,10 @@ Link behavior:
 - Uses D3 force simulation with custom field updates per tick.
 - Nodes are constrained to an inset polygon via clamp + soft barrier.
 - Resize preserves visual centroid by translating existing nodes before recomputing geometry.
+- Responsive modes:
+  - Wide: side-by-side viz + panel.
+  - Compact/medium: stacked layout, full-width viz.
+  - Small/mobile: stacked layout with dimension labels replaced by icons.
 
 
 9. React Integration (Recommended Pattern)
@@ -247,37 +239,44 @@ import { createSEALessonMap } from "@undp/sea-network-widget";
 
 export function SeaViz({ visible }) {
   const hostRef = useRef(null);
+  const mapRef = useRef(null);
 
   useEffect(() => {
     if (!visible || !hostRef.current) return;
 
-    let instance;
     let cancelled = false;
 
     createSEALessonMap({
       container: hostRef.current,
       d3,
-      autoLoadD3: false,
-      useShadowDom: true,
-      injectStyles: true,
+      autoLoadD3: false,      // no CDN load when app already bundles d3
+      theme: "light",          // switch to "dark" on dark pages
       dataUrls: {
         graphConfig: "/api/cms/sea/network-graph-config",
         moduleStructure: "/api/cms/sea/module-structure",
       },
-      minHeight: 520,
+      selectedModuleId: null,  // can be set initially or via setModuleSelection later
     }).then((viz) => {
       if (cancelled) {
         viz.destroy();
         return;
       }
-      instance = viz;
+      mapRef.current = viz;
     });
 
     return () => {
       cancelled = true;
-      instance?.destroy();
+      mapRef.current?.destroy();
+      mapRef.current = null;
     };
   }, [visible]);
+
+  // Example external module selector integration:
+  // useEffect(() => {
+  //   if (!mapRef.current) return;
+  //   if (selectedModuleId) mapRef.current.setModuleSelection(selectedModuleId);
+  //   else mapRef.current.clearModuleSelection();
+  // }, [selectedModuleId]);
 
   return <div ref={hostRef} style={{ width: "100%", height: 680 }} />;
 }
@@ -285,8 +284,8 @@ export function SeaViz({ visible }) {
 
 Dependency notes:
 - Preferred in React/Next apps: pass bundled D3 via `options.d3` and set `autoLoadD3: false`.
-- If not provided, runtime can auto-load D3 from `options.d3Url` (`autoLoadD3: true`).
-- CSS is injected by the widget (`injectStyles: true`), so no global stylesheet import is required.
+- If not provided, runtime auto-loads D3 from its internal CDN URL (`autoLoadD3: true`).
+- Widget CSS is injected internally and does not require host stylesheet imports.
 
 
 10. Lifecycle / Cleanup Semantics
@@ -306,9 +305,10 @@ This is required for toggle flows and route transitions.
 -------------------------------------
 - Host container should provide explicit width/height.
 - Runtime sets SVG to 100% width/height within container.
-- Default integration uses Shadow DOM (`useShadowDom: true`) + scoped CSS injection.
-- Widget CSS is scoped under `.sea-widget`, so it should not affect host page styles when Shadow DOM is disabled.
+- Widget mounts in Shadow DOM with scoped CSS injection by default (not configurable via options).
 - Tooltip is positioned absolutely within `.sea-widget`, so it does not alter page layout/scroll.
+- Theme is configurable with `options.theme` (`"light"` default, `"dark"` optional) to maintain contrast on different host backgrounds.
+- Light mode uses a single hardcoded palette (Ocean Mist); dark mode is switched via `theme: "dark"`.
 
 
 12. Tuning Guide
@@ -353,6 +353,8 @@ Unexpected config:
 ----------------------------
 - Confirm host app can call `createSEALessonMap` (via npm import or global fallback).
 - Confirm mount/unmount path calls `destroy()`.
+- Confirm external module trigger is wired (`setModuleSelection` / `clearModuleSelection`) from host selector.
+- Confirm theme is explicitly set per host page (`light`/`dark`) instead of relying on defaults.
 - Confirm CMS endpoints configured for `graphConfig` and `moduleStructure`.
 - Confirm one successful mount with visible data and interactions.
 - Confirm toggle away/toggle back does not duplicate listeners or instances.

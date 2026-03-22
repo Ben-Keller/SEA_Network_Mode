@@ -62,18 +62,19 @@ const FALLBACK_MODULE_COLORS = [
 ];
 const GRAPH_THEME = {
   light: {
-    outerFill: "rgba(18,44,70,0.02)",
-    outerStroke: "rgba(18,44,70,0.24)",
-    hoverRing: "rgba(18,44,70,0.22)",
-    anchorDot: "rgba(18,44,70,0.46)",
-    anchorText: "rgba(18,44,70,0.88)",
-    topoStroke: "rgba(18,44,70,0.10)",
-    dimStroke: "rgba(18,44,70,0.12)",
-    nodeStroke: "rgba(16,34,54,0.25)",
-    focusStroke: "rgba(16,34,54,0.92)",
-    moduleRing: "rgba(16,34,54,0.52)",
-    dimLinkActive: "rgba(18,44,70,0.25)",
-    dimLinkInactive: "rgba(18,44,70,0.10)",
+    // Ocean Mist (hardcoded single light theme)
+    outerFill: "rgba(89,165,226,0.06)",
+    outerStroke: "rgba(23,50,74,0.24)",
+    hoverRing: "rgba(23,50,74,0.22)",
+    anchorDot: "rgba(23,50,74,0.46)",
+    anchorText: "rgba(23,50,74,0.88)",
+    topoStroke: "rgba(23,50,74,0.10)",
+    dimStroke: "rgba(23,50,74,0.12)",
+    nodeStroke: "rgba(23,50,74,0.25)",
+    focusStroke: "rgba(23,50,74,0.92)",
+    moduleRing: "rgba(23,50,74,0.52)",
+    dimLinkActive: "rgba(23,50,74,0.25)",
+    dimLinkInactive: "rgba(23,50,74,0.10)",
   },
   dark: {
     outerFill: "rgba(255,255,255,0.015)",
@@ -91,87 +92,19 @@ const GRAPH_THEME = {
   },
 };
 
-function rgba(rgb, alpha) {
-  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
-}
-
-function buildLightPreset(descriptor) {
-  const ink = descriptor.ink;
-  const accent = descriptor.accent;
-  return {
-    id: descriptor.id,
-    label: descriptor.label,
-    cssVars: {
-      "--sea-widget-bg": descriptor.bg,
-      "--sea-text": rgba(ink, 1),
-      "--sea-muted": rgba(ink, 0.68),
-      "--sea-fainter": rgba(ink, 0.16),
-      "--sea-panel-bg": "rgba(255,255,255,0.86)",
-      "--sea-viz-bg-top": rgba(accent, 0.10),
-      "--sea-viz-bg-bottom": rgba(accent, 0.00),
-      "--sea-info-lead": rgba(ink, 0.90),
-      "--sea-info-body": rgba(ink, 0.76),
-      "--sea-thumb-border": rgba(ink, 0.16),
-      "--sea-thumb-bg": rgba(accent, 0.10),
-      "--sea-placeholder": rgba(ink, 0.56),
-      "--sea-legend-item": rgba(ink, 0.82),
-      "--sea-swatch-border": rgba(ink, 0.24),
-      "--sea-tooltip-bg": "rgba(255,255,255,0.98)",
-      "--sea-tooltip-border": rgba(ink, 0.18),
-      "--sea-tooltip-text": rgba(ink, 0.95),
-      "--sea-tooltip-muted": rgba(ink, 0.72),
-      "--sea-tooltip-shadow": `0 12px 24px ${rgba(accent, 0.20)}`,
-      "--sea-button-border": rgba(ink, 0.28),
-      "--sea-button-bg": rgba(accent, 0.14),
-      "--sea-button-bg-hover": rgba(accent, 0.22),
-      "--sea-button-text": rgba(ink, 1),
-      "--sea-dim-top-stroke": rgba(ink, 0.90),
-    },
-    graph: {
-      outerFill: rgba(accent, 0.06),
-      outerStroke: rgba(ink, 0.24),
-      hoverRing: rgba(ink, 0.22),
-      anchorDot: rgba(ink, 0.46),
-      anchorText: rgba(ink, 0.88),
-      topoStroke: rgba(ink, 0.10),
-      dimStroke: rgba(ink, 0.12),
-      nodeStroke: rgba(ink, 0.25),
-      focusStroke: rgba(ink, 0.92),
-      moduleRing: rgba(ink, 0.52),
-      dimLinkActive: rgba(ink, 0.25),
-      dimLinkInactive: rgba(ink, 0.10),
-    },
-  };
-}
-
-const LIGHT_MODE_PRESETS = [
-  buildLightPreset({ id: "1", label: "Ocean Mist", bg: "#f4f8fc", ink: [23, 50, 74], accent: [89, 165, 226] }),
-  buildLightPreset({ id: "2", label: "Skyline Blue", bg: "#f2f7ff", ink: [20, 47, 80], accent: [66, 136, 230] }),
-  buildLightPreset({ id: "3", label: "Sage Air", bg: "#f4faf6", ink: [28, 61, 51], accent: [88, 171, 136] }),
-  buildLightPreset({ id: "4", label: "Mint Glass", bg: "#f1fbfa", ink: [20, 61, 66], accent: [58, 182, 170] }),
-  buildLightPreset({ id: "5", label: "Sandstone", bg: "#fbf8f2", ink: [74, 58, 31], accent: [200, 156, 84] }),
-  buildLightPreset({ id: "6", label: "Amber Linen", bg: "#fff8ef", ink: [82, 53, 18], accent: [221, 147, 56] }),
-  buildLightPreset({ id: "7", label: "Coral Bloom", bg: "#fff6f3", ink: [84, 43, 36], accent: [223, 110, 92] }),
-  buildLightPreset({ id: "8", label: "Rose Quartz", bg: "#fff5f9", ink: [77, 40, 64], accent: [205, 112, 168] }),
-  buildLightPreset({ id: "9", label: "Lavender Haze", bg: "#f7f4ff", ink: [60, 47, 90], accent: [136, 118, 212] }),
-  buildLightPreset({ id: "10", label: "Slate Light", bg: "#f4f7fa", ink: [35, 48, 63], accent: [107, 141, 175] }),
-];
-const LIGHT_MODE_PRESET_MAP = new Map(LIGHT_MODE_PRESETS.map((p) => [p.id, p]));
-const LIGHT_MODE_OPTIONS = LIGHT_MODE_PRESETS.map((p) => ({ id: p.id, label: p.label }));
-
 const SEA_WIDGET_CSS = `
 .sea-widget {
-  --sea-widget-bg: #f5f8fc;
+  --sea-widget-bg: #f4f8fc;
   --sea-text: #17324a;
   --sea-muted: rgba(23,50,74,0.68);
   --sea-fainter: rgba(23,50,74,0.16);
-  --sea-panel-bg: rgba(255,255,255,0.84);
-  --sea-viz-bg-top: rgba(23,50,74,0.03);
+  --sea-panel-bg: rgba(255,255,255,0.86);
+  --sea-viz-bg-top: rgba(89,165,226,0.10);
   --sea-viz-bg-bottom: rgba(23,50,74,0.00);
   --sea-info-lead: rgba(23,50,74,0.90);
   --sea-info-body: rgba(23,50,74,0.76);
   --sea-thumb-border: rgba(23,50,74,0.16);
-  --sea-thumb-bg: rgba(23,50,74,0.05);
+  --sea-thumb-bg: rgba(89,165,226,0.10);
   --sea-placeholder: rgba(23,50,74,0.56);
   --sea-legend-item: rgba(23,50,74,0.82);
   --sea-swatch-border: rgba(23,50,74,0.24);
@@ -179,10 +112,10 @@ const SEA_WIDGET_CSS = `
   --sea-tooltip-border: rgba(23,50,74,0.18);
   --sea-tooltip-text: rgba(17,34,52,0.95);
   --sea-tooltip-muted: rgba(17,34,52,0.72);
-  --sea-tooltip-shadow: 0 12px 24px rgba(10,35,60,0.16);
+  --sea-tooltip-shadow: 0 12px 24px rgba(89,165,226,0.20);
   --sea-button-border: rgba(23,50,74,0.28);
-  --sea-button-bg: rgba(23,50,74,0.08);
-  --sea-button-bg-hover: rgba(23,50,74,0.14);
+  --sea-button-bg: rgba(89,165,226,0.14);
+  --sea-button-bg-hover: rgba(89,165,226,0.22);
   --sea-button-text: #17324a;
   --sea-dim-top-stroke: rgba(23,50,74,0.90);
   position: relative;
@@ -356,6 +289,7 @@ const SEA_WIDGET_CSS = `
 
 let D3 = null;
 let d3LoadPromise = null;
+const D3_CDN_URL = "https://d3js.org/d3.v7.min.js";
 
 function getGlobalD3() {
   if (typeof window !== "undefined" && window.d3) return window.d3;
@@ -388,8 +322,7 @@ async function ensureD3(options = {}) {
     throw new Error("D3 is not available. Pass options.d3 or enable autoLoadD3.");
   }
   if (!d3LoadPromise) {
-    const src = options.d3Url || "https://d3js.org/d3.v7.min.js";
-    d3LoadPromise = loadScript(src);
+    d3LoadPromise = loadScript(D3_CDN_URL);
   }
   await d3LoadPromise;
   const loaded = getGlobalD3();
@@ -407,34 +340,15 @@ function normalizeTheme(theme) {
   return String(theme || "light").toLowerCase() === "dark" ? "dark" : "light";
 }
 
-function normalizeLightModePreset(presetId) {
-  const id = String(presetId || "1");
-  return LIGHT_MODE_PRESET_MAP.has(id) ? id : "1";
-}
-
-function getLightModePreset(presetId) {
-  return LIGHT_MODE_PRESET_MAP.get(normalizeLightModePreset(presetId)) || LIGHT_MODE_PRESETS[0];
-}
-
-function applyLightModePreset(root, preset) {
-  if (!root || !preset) return;
-  Object.entries(preset.cssVars).forEach(([k, v]) => root.style.setProperty(k, v));
-}
-
 function getGraphTheme(theme) {
   return GRAPH_THEME[normalizeTheme(theme)];
 }
 
-function resolveWidgetCss(options = {}) {
-  if (typeof options.styles === "string" && options.styles.trim()) return options.styles;
-  return SEA_WIDGET_CSS;
-}
-
-function injectWidgetStyles(root, options = {}) {
-  if (!root || options.injectStyles === false) return;
+function injectWidgetStyles(root) {
+  if (!root) return;
   const style = document.createElement("style");
   style.setAttribute("data-sea-widget-style", "true");
-  style.textContent = resolveWidgetCss(options);
+  style.textContent = SEA_WIDGET_CSS;
   root.appendChild(style);
 }
 
@@ -444,6 +358,7 @@ let svg = null;
 let mountEl = null;
 let mountRoot = null;
 let widgetRoot = null;
+const WIDGET_MIN_HEIGHT_PX = 520;
 let width = 900;
 let height = 650;
 let layoutBound = false;
@@ -586,7 +501,7 @@ function setupMount(options = {}) {
     ? document.querySelector(options.container)
     : (options.container || defaultHost);
   mountEl = host || document.body;
-  const useShadowDom = (options.useShadowDom !== false) && !!mountEl?.attachShadow;
+  const useShadowDom = !!mountEl?.attachShadow;
   if (useShadowDom) {
     mountRoot = mountEl.shadowRoot || mountEl.attachShadow({ mode: "open" });
     if (mountRoot.innerHTML != null) mountRoot.innerHTML = "";
@@ -594,18 +509,11 @@ function setupMount(options = {}) {
     mountRoot = mountEl;
     if (mountRoot && mountRoot.innerHTML != null) mountRoot.innerHTML = "";
   }
-  injectWidgetStyles(mountRoot, options);
+  injectWidgetStyles(mountRoot);
   widgetRoot = document.createElement("div");
   const resolvedTheme = normalizeTheme(options.theme);
   widgetRoot.className = `sea-widget sea-theme-${resolvedTheme}`;
-  if (resolvedTheme === "light") {
-    const preset = getLightModePreset(options.lightModePreset);
-    widgetRoot.setAttribute("data-sea-light-mode", preset.id);
-    applyLightModePreset(widgetRoot, preset);
-    ACTIVE_GRAPH_THEME = preset.graph;
-  } else {
-    ACTIVE_GRAPH_THEME = GRAPH_THEME.dark;
-  }
+  ACTIVE_GRAPH_THEME = getGraphTheme(resolvedTheme);
 
   const main = document.createElement("div");
   main.className = "sea-widget-main";
@@ -642,7 +550,7 @@ function setupMount(options = {}) {
   if (mountEl.style) {
     if (!mountEl.style.width) mountEl.style.width = "100%";
     if (!mountEl.style.height) mountEl.style.height = "100%";
-    if (!mountEl.style.minHeight) mountEl.style.minHeight = `${options.minHeight || 520}px`;
+    if (!mountEl.style.minHeight) mountEl.style.minHeight = `${WIDGET_MIN_HEIGHT_PX}px`;
   }
 }
 
@@ -1244,18 +1152,15 @@ Implementation notes (handover)
 */
 
 const DEFAULT_SEA_OPTIONS = {
-  dataDir: "data",
+  // Public API options
   dataUrls: {},
   data: {},
   d3: null,
   autoLoadD3: true,
-  d3Url: "https://d3js.org/d3.v7.min.js",
-  useShadowDom: true,
-  injectStyles: true,
-  styles: "",
   theme: "light",
-  lightModePreset: "1",
   selectedModuleId: null,
+
+  // Internal runtime defaults (not part of public API)
   compactBreakpoint: 980,
   smallBreakpoint: 520,
   layoutHysteresis: 24,
@@ -1276,13 +1181,39 @@ const DEFAULT_SEA_OPTIONS = {
   nodeScaleDimBoost: 1.08,
   minSimWidth: 280,
   minSimHeight: 260,
-  minHeight: 520,
   dimIconDir: "",
   logoUrl: "https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png",
   infoInitTitle: "Sustainable Energy Academy",
   infoInitLead: "Explore the lesson map.",
   infoInitBody: "Hover or click lessons and dimensions to inspect how content clusters by policy, technology, finance, equity, data, and implementation.",
 };
+const PUBLIC_OPTION_KEYS = new Set([
+  "container",
+  "dataUrls",
+  "data",
+  "d3",
+  "autoLoadD3",
+  "theme",
+  "selectedModuleId",
+]);
+
+function normalizePublicOptions(options = {}) {
+  const input = options && typeof options === "object" ? options : {};
+  const normalized = {};
+  const ignored = [];
+  Object.keys(input).forEach((k) => {
+    if (PUBLIC_OPTION_KEYS.has(k)) {
+      normalized[k] = input[k];
+    } else {
+      ignored.push(k);
+    }
+  });
+  if (ignored.length) {
+    console.warn(`[SEA] Ignored unsupported options: ${ignored.join(", ")}`);
+  }
+  return normalized;
+}
+
 let SEA_OPTIONS = { ...DEFAULT_SEA_OPTIONS };
 const DATA_FILES = {
   graphConfig: "sea_network_graph_config.json",
@@ -1299,19 +1230,14 @@ function resetConfig() {
   });
 }
 
-function resolveDataPath(file) {
-  const base = String(SEA_OPTIONS.dataDir || "data").replace(/\/+$/, "");
-  return `${base}/${file}`;
-}
-
 // Data lookup order is deterministic to make CMS migration straightforward:
 // 1) in-memory data passed by host app (SEA_OPTIONS.data)
 // 2) explicit per-file URLs (SEA_OPTIONS.dataUrls)
-// 3) local relative fallback (SEA_OPTIONS.dataDir + default filename)
 function resolveDataUrl(key) {
   const urls = SEA_OPTIONS.dataUrls || {};
-  if (urls[key]) return urls[key];
-  return resolveDataPath(DATA_FILES[key]);
+  if (urls[key] != null && String(urls[key]).trim()) return urls[key];
+  const file = DATA_FILES[key] || `${key}.json`;
+  throw new Error(`[SEA] Missing data source for "${key}". Pass options.data.${key} or options.dataUrls.${key} (e.g. "${file}").`);
 }
 
 async function loadJsonData(key) {
@@ -2638,34 +2564,13 @@ window.createSEALessonMap(options) -> Promise<instance>
 
 Options:
 - container: string | Element (required in embedded apps)
-- dataDir: base path fallback for files
 - dataUrls: per-file URL overrides { graphConfig, moduleStructure }
 - data: optional in-memory payloads with same keys as dataUrls
 - d3: optional injected D3 instance
-- autoLoadD3: if true, loads D3 from d3Url when not injected/global
-- d3Url: source URL used when autoLoadD3 is enabled
-- useShadowDom: mount widget inside Shadow DOM for style isolation
-- injectStyles: inject built-in widget styles into mount root
-- styles: optional CSS override string used when injectStyles is true
+- autoLoadD3: if true, loads D3 from the built-in CDN URL when not injected/global
 - theme: "light" | "dark" (default "light")
-- lightModePreset: "1"..."10" (light theme color preset id)
 - selectedModuleId: optional initial module selection id ("1", "2", ...)
-- compactBreakpoint: width where side panel stacks below viz
-- smallBreakpoint: width where dimension labels switch to icons
-- layoutHysteresis: extra px buffer to prevent resize mode thrash at breakpoints
-- resizeRerenderIntervalMs: max rate (ms) for live rerender during active resize
-- resizeSettleMs: trailing debounce delay before expensive rerender after resize
-- resizeKickIntervalMs / resizeKickAlpha: throttle simulation restarts while resizing
-- mediumPolygonRadiusFactor: minimum polygon radius factor while in stacked medium mode
-- smallPolygonRadiusFactor: minimum polygon radius factor while in stacked small/icon mode
-- nodeSizeBasePx: baseline hex radius multiplier before viewport scaling
-- nodeScaleViewportRef: viewport reference (min side px) where node scale equals 1
-- nodeScaleRadiusRef: radius reference used for polygon-aware scaling
-- nodeScaleMin / nodeScaleMax / nodeScaleExponent: clamp and shape viewport-driven node scaling
-- nodeScaleRadiusExponent / nodeScaleBlend: tune radius-vs-viewport blend
-- nodeScaleDimBoost: extra size scale while a dimension focus is active
-- dimIconDir: base directory used for relative dimension icon filenames
-- minHeight: minimum mount height for generated svg host
+- unsupported option keys are ignored with a console warning
 
 Instance:
 - svg: mounted svg DOM node
@@ -2683,9 +2588,10 @@ async function createSEALessonMap(options = {}) {
 
   resetConfig();
   resetState();
+  const publicOptions = normalizePublicOptions(options);
   SEA_OPTIONS = {
     ...DEFAULT_SEA_OPTIONS,
-    ...options,
+    ...publicOptions,
   };
   prewarmImage(String(SEA_OPTIONS.logoUrl || "https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png"));
   await ensureD3(SEA_OPTIONS);
@@ -2760,11 +2666,8 @@ async function createSEALessonMap(options = {}) {
   return instance;
 }
 
-createSEALessonMap.lightModeOptions = LIGHT_MODE_OPTIONS;
-
 if (typeof window !== "undefined") {
   window.createSEALessonMap = createSEALessonMap;
-  window.SEA_LIGHT_MODE_OPTIONS = LIGHT_MODE_OPTIONS;
   window.setSEALessonMapModule = (moduleId) => {
     if (activeInstance && typeof activeInstance.setModuleSelection === "function") {
       activeInstance.setModuleSelection(moduleId);
@@ -2780,6 +2683,5 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     createSEALessonMap,
     default: createSEALessonMap,
-    lightModeOptions: LIGHT_MODE_OPTIONS,
   };
 }
