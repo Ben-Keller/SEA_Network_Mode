@@ -6,6 +6,9 @@ const CONFIG = {
   polygonRadiusFactor: 0.29,
   insetPadding: 38,               // keeps nodes away from edges (safe polygon inset)
   minEdgeDistance: 6,             // extra margin enforced by soft barrier
+  minEdgeDistanceRefRadius: 190,  // radius where minEdgeDistance is used as-is
+  minEdgeDistanceScaleMin: 0.55,  // lower clamp for responsive edge margin scaling
+  minEdgeDistanceScaleMax: 1.8,   // upper clamp for responsive edge margin scaling
 
   // Motion
   driftStrength: 0.074,           // subtle always-on drift (increase slightly if desired)
@@ -57,11 +60,131 @@ const FALLBACK_MODULE_COLORS = [
   "#757AF0",
   "#006AB5",
 ];
+const GRAPH_THEME = {
+  light: {
+    outerFill: "rgba(18,44,70,0.02)",
+    outerStroke: "rgba(18,44,70,0.24)",
+    hoverRing: "rgba(18,44,70,0.22)",
+    anchorDot: "rgba(18,44,70,0.46)",
+    anchorText: "rgba(18,44,70,0.88)",
+    topoStroke: "rgba(18,44,70,0.10)",
+    dimStroke: "rgba(18,44,70,0.12)",
+    nodeStroke: "rgba(16,34,54,0.25)",
+    focusStroke: "rgba(16,34,54,0.92)",
+    moduleRing: "rgba(16,34,54,0.52)",
+    dimLinkActive: "rgba(18,44,70,0.25)",
+    dimLinkInactive: "rgba(18,44,70,0.10)",
+  },
+  dark: {
+    outerFill: "rgba(255,255,255,0.015)",
+    outerStroke: "rgba(232,236,255,0.14)",
+    hoverRing: "rgba(232,236,255,0.16)",
+    anchorDot: "rgba(232,236,255,0.55)",
+    anchorText: "rgba(232,236,255,0.82)",
+    topoStroke: "rgba(232,236,255,0.07)",
+    dimStroke: "rgba(232,236,255,0.08)",
+    nodeStroke: "rgba(10,14,30,0.22)",
+    focusStroke: "rgba(255,255,255,0.92)",
+    moduleRing: "rgba(255,255,255,0.60)",
+    dimLinkActive: "rgba(232,236,255,0.18)",
+    dimLinkInactive: "rgba(232,236,255,0.08)",
+  },
+};
+
+function rgba(rgb, alpha) {
+  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+}
+
+function buildLightPreset(descriptor) {
+  const ink = descriptor.ink;
+  const accent = descriptor.accent;
+  return {
+    id: descriptor.id,
+    label: descriptor.label,
+    cssVars: {
+      "--sea-widget-bg": descriptor.bg,
+      "--sea-text": rgba(ink, 1),
+      "--sea-muted": rgba(ink, 0.68),
+      "--sea-fainter": rgba(ink, 0.16),
+      "--sea-panel-bg": "rgba(255,255,255,0.86)",
+      "--sea-viz-bg-top": rgba(accent, 0.10),
+      "--sea-viz-bg-bottom": rgba(accent, 0.00),
+      "--sea-info-lead": rgba(ink, 0.90),
+      "--sea-info-body": rgba(ink, 0.76),
+      "--sea-thumb-border": rgba(ink, 0.16),
+      "--sea-thumb-bg": rgba(accent, 0.10),
+      "--sea-placeholder": rgba(ink, 0.56),
+      "--sea-legend-item": rgba(ink, 0.82),
+      "--sea-swatch-border": rgba(ink, 0.24),
+      "--sea-tooltip-bg": "rgba(255,255,255,0.98)",
+      "--sea-tooltip-border": rgba(ink, 0.18),
+      "--sea-tooltip-text": rgba(ink, 0.95),
+      "--sea-tooltip-muted": rgba(ink, 0.72),
+      "--sea-tooltip-shadow": `0 12px 24px ${rgba(accent, 0.20)}`,
+      "--sea-button-border": rgba(ink, 0.28),
+      "--sea-button-bg": rgba(accent, 0.14),
+      "--sea-button-bg-hover": rgba(accent, 0.22),
+      "--sea-button-text": rgba(ink, 1),
+      "--sea-dim-top-stroke": rgba(ink, 0.90),
+    },
+    graph: {
+      outerFill: rgba(accent, 0.06),
+      outerStroke: rgba(ink, 0.24),
+      hoverRing: rgba(ink, 0.22),
+      anchorDot: rgba(ink, 0.46),
+      anchorText: rgba(ink, 0.88),
+      topoStroke: rgba(ink, 0.10),
+      dimStroke: rgba(ink, 0.12),
+      nodeStroke: rgba(ink, 0.25),
+      focusStroke: rgba(ink, 0.92),
+      moduleRing: rgba(ink, 0.52),
+      dimLinkActive: rgba(ink, 0.25),
+      dimLinkInactive: rgba(ink, 0.10),
+    },
+  };
+}
+
+const LIGHT_MODE_PRESETS = [
+  buildLightPreset({ id: "1", label: "Ocean Mist", bg: "#f4f8fc", ink: [23, 50, 74], accent: [89, 165, 226] }),
+  buildLightPreset({ id: "2", label: "Skyline Blue", bg: "#f2f7ff", ink: [20, 47, 80], accent: [66, 136, 230] }),
+  buildLightPreset({ id: "3", label: "Sage Air", bg: "#f4faf6", ink: [28, 61, 51], accent: [88, 171, 136] }),
+  buildLightPreset({ id: "4", label: "Mint Glass", bg: "#f1fbfa", ink: [20, 61, 66], accent: [58, 182, 170] }),
+  buildLightPreset({ id: "5", label: "Sandstone", bg: "#fbf8f2", ink: [74, 58, 31], accent: [200, 156, 84] }),
+  buildLightPreset({ id: "6", label: "Amber Linen", bg: "#fff8ef", ink: [82, 53, 18], accent: [221, 147, 56] }),
+  buildLightPreset({ id: "7", label: "Coral Bloom", bg: "#fff6f3", ink: [84, 43, 36], accent: [223, 110, 92] }),
+  buildLightPreset({ id: "8", label: "Rose Quartz", bg: "#fff5f9", ink: [77, 40, 64], accent: [205, 112, 168] }),
+  buildLightPreset({ id: "9", label: "Lavender Haze", bg: "#f7f4ff", ink: [60, 47, 90], accent: [136, 118, 212] }),
+  buildLightPreset({ id: "10", label: "Slate Light", bg: "#f4f7fa", ink: [35, 48, 63], accent: [107, 141, 175] }),
+];
+const LIGHT_MODE_PRESET_MAP = new Map(LIGHT_MODE_PRESETS.map((p) => [p.id, p]));
+const LIGHT_MODE_OPTIONS = LIGHT_MODE_PRESETS.map((p) => ({ id: p.id, label: p.label }));
+
 const SEA_WIDGET_CSS = `
 .sea-widget {
-  --sea-text: #e8ecff;
-  --sea-muted: rgba(232,236,255,0.72);
-  --sea-fainter: rgba(232,236,255,0.08);
+  --sea-widget-bg: #f5f8fc;
+  --sea-text: #17324a;
+  --sea-muted: rgba(23,50,74,0.68);
+  --sea-fainter: rgba(23,50,74,0.16);
+  --sea-panel-bg: rgba(255,255,255,0.84);
+  --sea-viz-bg-top: rgba(23,50,74,0.03);
+  --sea-viz-bg-bottom: rgba(23,50,74,0.00);
+  --sea-info-lead: rgba(23,50,74,0.90);
+  --sea-info-body: rgba(23,50,74,0.76);
+  --sea-thumb-border: rgba(23,50,74,0.16);
+  --sea-thumb-bg: rgba(23,50,74,0.05);
+  --sea-placeholder: rgba(23,50,74,0.56);
+  --sea-legend-item: rgba(23,50,74,0.82);
+  --sea-swatch-border: rgba(23,50,74,0.24);
+  --sea-tooltip-bg: rgba(255,255,255,0.98);
+  --sea-tooltip-border: rgba(23,50,74,0.18);
+  --sea-tooltip-text: rgba(17,34,52,0.95);
+  --sea-tooltip-muted: rgba(17,34,52,0.72);
+  --sea-tooltip-shadow: 0 12px 24px rgba(10,35,60,0.16);
+  --sea-button-border: rgba(23,50,74,0.28);
+  --sea-button-bg: rgba(23,50,74,0.08);
+  --sea-button-bg-hover: rgba(23,50,74,0.14);
+  --sea-button-text: #17324a;
+  --sea-dim-top-stroke: rgba(23,50,74,0.90);
   position: relative;
   display: flex;
   width: 100%;
@@ -71,16 +194,46 @@ const SEA_WIDGET_CSS = `
   overflow: hidden;
   color: var(--sea-text);
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  background: var(--sea-widget-bg);
+}
+.sea-widget.sea-theme-dark {
+  --sea-widget-bg: #0b1020;
+  --sea-text: #e8ecff;
+  --sea-muted: rgba(232,236,255,0.72);
+  --sea-fainter: rgba(232,236,255,0.08);
+  --sea-panel-bg: rgba(255,255,255,0.02);
+  --sea-viz-bg-top: rgba(255,255,255,0.02);
+  --sea-viz-bg-bottom: rgba(255,255,255,0.00);
+  --sea-info-lead: rgba(232,236,255,0.90);
+  --sea-info-body: rgba(232,236,255,0.74);
+  --sea-thumb-border: rgba(255,255,255,0.14);
+  --sea-thumb-bg: rgba(255,255,255,0.05);
+  --sea-placeholder: rgba(232,236,255,0.56);
+  --sea-legend-item: rgba(232,236,255,0.82);
+  --sea-swatch-border: rgba(255,255,255,0.18);
+  --sea-tooltip-bg: rgba(10,14,28,0.92);
+  --sea-tooltip-border: rgba(232,236,255,0.14);
+  --sea-tooltip-text: rgba(232,236,255,0.95);
+  --sea-tooltip-muted: rgba(232,236,255,0.72);
+  --sea-tooltip-shadow: 0 12px 30px rgba(0,0,0,0.35);
+  --sea-button-border: rgba(232,236,255,0.26);
+  --sea-button-bg: rgba(232,236,255,0.08);
+  --sea-button-bg-hover: rgba(232,236,255,0.14);
+  --sea-button-text: rgba(232,236,255,0.95);
+  --sea-dim-top-stroke: rgba(255,255,255,0.92);
 }
 .sea-widget, .sea-widget * { box-sizing: border-box; }
 .sea-widget .sea-widget-main { flex: 1 1 auto; min-width: 620px; min-height: 0; overflow: hidden; }
 .sea-widget .sea-widget-viz, .sea-widget .sea-widget-viz > svg { width: 100%; height: 100%; min-height: 520px; }
 .sea-widget .sea-widget-viz > svg {
   display: block;
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00));
+  background: linear-gradient(180deg, var(--sea-viz-bg-top), var(--sea-viz-bg-bottom));
   border: 1px solid var(--sea-fainter);
   border-radius: 14px;
+  user-select: none;
+  -webkit-user-select: none;
 }
+.sea-widget .sea-widget-viz, .sea-widget .sea-widget-viz * { user-select: none; -webkit-user-select: none; }
 .sea-widget .sea-widget-side {
   flex: 0 0 clamp(320px, 34vw, 360px);
   width: clamp(320px, 34vw, 360px);
@@ -92,9 +245,26 @@ const SEA_WIDGET_CSS = `
   min-height: 0;
   overflow: hidden;
 }
-.sea-widget .panel { border: 1px solid var(--sea-fainter); border-radius: 12px; background: rgba(255,255,255,0.02); overflow: hidden; }
+.sea-widget .panel { border: 1px solid var(--sea-fainter); border-radius: 12px; background: var(--sea-panel-bg); overflow: hidden; }
 .sea-widget .info-panel { display: flex; flex-direction: column; flex: 1 1 clamp(320px, 56vh, 620px); min-height: 0; overflow: hidden; }
-.sea-widget .info-panel .panel-body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.sea-widget .info-panel .panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(23,50,74,0.28) transparent;
+}
+.sea-widget.sea-theme-dark .info-panel .panel-body { scrollbar-color: rgba(232,236,255,0.24) transparent; }
+.sea-widget .info-panel .panel-body::-webkit-scrollbar { width: 8px; }
+.sea-widget .info-panel .panel-body::-webkit-scrollbar-track { background: transparent; }
+.sea-widget .info-panel .panel-body::-webkit-scrollbar-thumb {
+  background: rgba(23,50,74,0.22);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.sea-widget.sea-theme-dark .info-panel .panel-body::-webkit-scrollbar-thumb { background: rgba(232,236,255,0.24); }
 .sea-widget .legend-panel { margin-top: 0; flex: 0 0 auto; }
 .sea-widget .panel-title { padding: 10px 12px; border-bottom: 1px solid var(--sea-fainter); color: var(--sea-muted); font-size: 12px; font-weight: 650; }
 .sea-widget .panel-body { padding: 12px; }
@@ -104,66 +274,83 @@ const SEA_WIDGET_CSS = `
 .sea-widget .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 8px 0; }
 .sea-widget .sea-info-lesson { display: flex; flex-direction: column; gap: 8px; height: 100%; }
 .sea-widget .info-media { position: relative; }
-.sea-widget .info-init, .sea-widget .info-lesson-fields { display: none; }
+.sea-widget .info-init, .sea-widget .info-lesson-fields, .sea-widget .info-dim-fields, .sea-widget .info-module-fields { display: none; }
 .sea-widget .sea-info-lesson.mode-init .info-init { display: flex; flex-direction: column; gap: 8px; }
-.sea-widget .sea-info-lesson.mode-init .info-logo-wrap { display: block; }
-.sea-widget .sea-info-lesson.mode-init .info-lesson-wrap { display: none; }
+.sea-widget .sea-info-lesson.mode-init .info-lesson-wrap { display: block; }
 .sea-widget .sea-info-lesson.mode-lesson .info-lesson-fields { display: flex; flex-direction: column; gap: 8px; }
-.sea-widget .sea-info-lesson.mode-lesson .info-logo-wrap { display: none; }
 .sea-widget .sea-info-lesson.mode-lesson .info-lesson-wrap { display: block; }
+.sea-widget .sea-info-lesson.mode-dim .info-dim-fields { display: flex; flex-direction: column; gap: 8px; }
+.sea-widget .sea-info-lesson.mode-dim .info-lesson-wrap { display: block; }
+.sea-widget .sea-info-lesson.mode-module .info-module-fields { display: flex; flex-direction: column; gap: 8px; }
+.sea-widget .sea-info-lesson.mode-module .info-lesson-wrap { display: block; }
 .sea-widget .info-init-title { font-size: 16px; font-weight: 700; line-height: 1.25; }
-.sea-widget .info-init-lead { font-size: 14px; font-weight: 600; line-height: 1.3; color: rgba(232,236,255,0.90); }
-.sea-widget .info-init-body { font-size: 12px; line-height: 1.45; color: rgba(232,236,255,0.74); max-height: 5.8em; overflow: hidden; }
+.sea-widget .info-init-lead { font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--sea-info-lead); }
+.sea-widget .info-init-body { font-size: 12px; line-height: 1.45; color: var(--sea-info-body); max-height: 5.8em; overflow: hidden; }
 .sea-widget .info-lesson-title { font-size: 15px; font-weight: 650; line-height: 1.3; }
-.sea-widget .info-thumb-wrap { margin-bottom: 2px; position: relative; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); overflow: hidden; }
-.sea-widget .info-logo-wrap { height: clamp(128px, 22vh, 176px); }
+.sea-widget .info-thumb-wrap { margin-bottom: 2px; position: relative; border-radius: 10px; border: 1px solid var(--sea-thumb-border); background: var(--sea-thumb-bg); overflow: hidden; }
 .sea-widget .info-lesson-wrap { height: clamp(118px, 18vh, 140px); }
 .sea-widget .info-thumb { width: 100%; height: 100%; object-fit: cover; object-position: center center; display: block; }
-.sea-widget .info-logo-wrap .info-thumb { object-fit: contain; padding: 0; }
 .sea-widget .info-thumb-wrap.no-thumb .info-thumb { opacity: 0; }
-.sea-widget .info-thumb-wrap.no-thumb::after { content: "No thumbnail"; position: absolute; inset: 0; display: grid; place-items: center; color: rgba(232,236,255,0.56); font-size: 12px; }
-.sea-widget .info-logo-wrap.no-thumb::after { content: "Logo unavailable"; }
+.sea-widget .info-thumb-wrap.no-thumb::after { content: "No thumbnail"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--sea-placeholder); font-size: 12px; }
 .sea-widget .info-action { margin-top: 4px; }
 .sea-widget .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
-.sea-widget .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(232,236,255,0.82); }
-.sea-widget .swatch { width: 10px; height: 10px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.18); }
+.sea-widget .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sea-legend-item); }
+.sea-widget .legend-item.is-active { font-weight: 650; }
+.sea-widget .swatch { width: 12px; height: 12px; flex: 0 0 12px; border-radius: 3px; border: 1px solid var(--sea-swatch-border); }
 .sea-widget .sea-tooltip {
   pointer-events: none;
   position: absolute;
   z-index: 20;
-  background: rgba(10,14,28,0.92);
-  border: 1px solid rgba(232,236,255,0.14);
-  color: rgba(232,236,255,0.95);
+  background: var(--sea-tooltip-bg);
+  border: 1px solid var(--sea-tooltip-border);
+  color: var(--sea-tooltip-text);
   padding: 8px 10px;
   border-radius: 10px;
   font-size: 12px;
   max-width: 340px;
-  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+  box-shadow: var(--sea-tooltip-shadow);
 }
 .sea-widget .sea-tooltip .t { font-weight: 650; margin-bottom: 2px; }
-.sea-widget .sea-tooltip .s { color: rgba(232,236,255,0.72); line-height: 1.25; }
+.sea-widget .sea-tooltip .s { color: var(--sea-tooltip-muted); line-height: 1.25; }
 .sea-widget .tipRow { display: flex; gap: 10px; align-items: flex-start; }
 .sea-widget .thumb { width: 54px; height: 54px; object-fit: cover; border-radius: 10px; flex: 0 0 auto; opacity: 0.95; }
 .sea-widget .tipText { min-width: 0; }
 .sea-widget .go-lesson-btn {
   appearance: none;
-  border: 1px solid rgba(232,236,255,0.26);
-  background: rgba(232,236,255,0.08);
-  color: rgba(232,236,255,0.95);
+  border: 1px solid var(--sea-button-border);
+  background: var(--sea-button-bg);
+  color: var(--sea-button-text);
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }
-.sea-widget .go-lesson-btn:hover { background: rgba(232,236,255,0.14); }
+.sea-widget .go-lesson-btn:hover { background: var(--sea-button-bg-hover); }
 .sea-widget .dimHit { pointer-events: all; }
-.sea-widget .dimTop { stroke: rgba(255,255,255,0.92) !important; stroke-width: 2.4px !important; }
+.sea-widget .dimTop { stroke: var(--sea-dim-top-stroke) !important; stroke-width: 2.4px !important; }
+.sea-widget .dimIconHalo { pointer-events: none; }
+.sea-widget .dimIcon { pointer-events: none; }
+.sea-widget.sea-widget-compact { flex-direction: column; height: auto; min-height: 0; overflow: visible; }
+.sea-widget.sea-widget-compact .sea-widget-main { min-width: 0; height: auto; flex: 0 0 auto; width: 100%; max-width: 100%; }
+.sea-widget.sea-widget-compact .sea-widget-viz,
+.sea-widget.sea-widget-compact .sea-widget-viz > svg { min-height: clamp(260px, 52vw, 420px); height: clamp(260px, 52vw, 420px); }
+.sea-widget.sea-widget-compact .sea-widget-side { flex: 0 0 auto; width: 100%; max-width: 100%; height: auto; overflow: visible; }
+.sea-widget.sea-widget-compact .info-panel { flex: 0 0 auto; max-height: none; }
+.sea-widget.sea-widget-compact .info-panel .panel-body { overflow: auto; }
+.sea-widget.sea-widget-medium .sea-widget-viz,
+.sea-widget.sea-widget-medium .sea-widget-viz > svg { min-height: clamp(360px, 64vw, 620px); height: clamp(360px, 64vw, 620px); }
+.sea-widget.sea-widget-small { padding: 8px; gap: 10px; }
+.sea-widget.sea-widget-small .sea-widget-viz,
+.sea-widget.sea-widget-small .sea-widget-viz > svg { min-height: clamp(280px, 94vw, 420px); height: clamp(280px, 94vw, 420px); }
 @media (max-width: 980px) {
-  .sea-widget { flex-direction: column; }
-  .sea-widget .sea-widget-main { min-width: 0; height: 66vh; }
-  .sea-widget .sea-widget-side { flex: 0 0 auto; width: 100%; max-width: 100%; height: auto; }
-  .sea-widget .info-panel { flex: 0 0 auto; max-height: 48vh; }
+  .sea-widget { flex-direction: column; height: auto; min-height: 0; overflow: visible; }
+  .sea-widget .sea-widget-main { min-width: 0; height: auto; flex: 0 0 auto; width: 100%; max-width: 100%; }
+  .sea-widget .sea-widget-viz,
+  .sea-widget .sea-widget-viz > svg { min-height: clamp(260px, 52vw, 420px); height: clamp(260px, 52vw, 420px); }
+  .sea-widget .sea-widget-side { flex: 0 0 auto; width: 100%; max-width: 100%; height: auto; overflow: visible; }
+  .sea-widget .info-panel { flex: 0 0 auto; max-height: none; }
+  .sea-widget .info-panel .panel-body { overflow: auto; }
 }
 `;
 
@@ -214,6 +401,30 @@ function isSelectionEmpty(sel) {
   return !sel || sel.empty();
 }
 
+let ACTIVE_GRAPH_THEME = GRAPH_THEME.light;
+
+function normalizeTheme(theme) {
+  return String(theme || "light").toLowerCase() === "dark" ? "dark" : "light";
+}
+
+function normalizeLightModePreset(presetId) {
+  const id = String(presetId || "1");
+  return LIGHT_MODE_PRESET_MAP.has(id) ? id : "1";
+}
+
+function getLightModePreset(presetId) {
+  return LIGHT_MODE_PRESET_MAP.get(normalizeLightModePreset(presetId)) || LIGHT_MODE_PRESETS[0];
+}
+
+function applyLightModePreset(root, preset) {
+  if (!root || !preset) return;
+  Object.entries(preset.cssVars).forEach(([k, v]) => root.style.setProperty(k, v));
+}
+
+function getGraphTheme(theme) {
+  return GRAPH_THEME[normalizeTheme(theme)];
+}
+
 function resolveWidgetCss(options = {}) {
   if (typeof options.styles === "string" && options.styles.trim()) return options.styles;
   return SEA_WIDGET_CSS;
@@ -238,13 +449,98 @@ let height = 650;
 let layoutBound = false;
 let resizeHandler = null;
 let rerenderHandler = null;
+let resizeRaf = 0;
+let rerenderRaf = 0;
+let rerenderTimer = 0;
+let rerenderLastAt = 0;
+let isSmallLayoutActive = false;
+let layoutMode = "wide";
+
+function tooltipsEnabled() {
+  // Disable tooltips only in extra-small/mobile mode (dimension-icon mode).
+  return layoutMode !== "small";
+}
+
+function runRerenderNow() {
+  if (!rerenderHandler) return;
+  if (rerenderRaf) return;
+  rerenderRaf = window.requestAnimationFrame(() => {
+    rerenderRaf = 0;
+    rerenderLastAt = performance.now();
+    if (rerenderHandler) rerenderHandler();
+  });
+}
+
+function scheduleRerender() {
+  if (!rerenderHandler) return;
+  const now = performance.now();
+  const liveInterval = Math.max(16, Number(SEA_OPTIONS.resizeRerenderIntervalMs || 48));
+  const settleDelay = Math.max(liveInterval, Number(SEA_OPTIONS.resizeSettleMs || 90));
+
+  // Keep resizing visually live, but cap expensive rerenders to a safe rate.
+  if ((now - rerenderLastAt) >= liveInterval) {
+    runRerenderNow();
+  }
+
+  if (rerenderTimer) {
+    window.clearTimeout(rerenderTimer);
+    rerenderTimer = 0;
+  }
+  rerenderTimer = window.setTimeout(() => {
+    rerenderTimer = 0;
+    runRerenderNow();
+  }, settleDelay);
+}
+
+function updateLayoutMode() {
+  if (!widgetRoot) return;
+  const bp = Number(SEA_OPTIONS.compactBreakpoint || 980);
+  const smallBpRaw = Number(SEA_OPTIONS.smallBreakpoint || 520);
+  const smallBp = Math.max(320, Math.min(bp - 1, smallBpRaw));
+  const hysteresis = Math.max(0, Number(SEA_OPTIONS.layoutHysteresis || 24));
+  const rootRect = widgetRoot.getBoundingClientRect();
+  const w = rootRect.width;
+  if (w <= 0) return false;
+
+  const compactEnter = bp;
+  const compactExit = bp + hysteresis;
+  const smallEnter = smallBp;
+  const smallExit = smallBp + hysteresis;
+
+  const compact = (layoutMode === "wide") ? (w <= compactEnter) : (w <= compactExit);
+  const small = compact && ((layoutMode === "small") ? (w <= smallExit) : (w <= smallEnter));
+  const nextMode = small ? "small" : (compact ? "medium" : "wide");
+  const changed = nextMode !== layoutMode;
+  layoutMode = nextMode;
+
+  widgetRoot.classList.toggle("sea-widget-compact", nextMode !== "wide");
+  widgetRoot.classList.toggle("sea-widget-medium", nextMode === "medium");
+  widgetRoot.classList.toggle("sea-widget-small", nextMode === "small");
+  isSmallLayoutActive = (nextMode === "small");
+  if (nextMode === "small" && !isSelectionEmpty(tooltip)) {
+    tooltip.interrupt()
+      .style("opacity", 0)
+      .style("display", "none")
+      .style("left", "-9999px")
+      .style("top", "-9999px");
+  }
+  return changed;
+}
 
 function resize() {
-  if (isSelectionEmpty(svg)) return;
+  if (isSelectionEmpty(svg)) return false;
+  const modeChanged = !!updateLayoutMode();
   const rect = svg.node().getBoundingClientRect();
-  width = Math.max(640, Math.floor(rect.width));
-  height = Math.max(520, Math.floor(rect.height));
+  const minW = Math.max(200, Number(SEA_OPTIONS.minSimWidth || 280));
+  const minH = Math.max(200, Number(SEA_OPTIONS.minSimHeight || 260));
+  const nextWidth = Math.max(minW, Math.floor(rect.width));
+  const nextHeight = Math.max(minH, Math.floor(rect.height));
+  const changed = modeChanged || nextWidth !== width || nextHeight !== height;
+  if (!changed) return false;
+  width = nextWidth;
+  height = nextHeight;
   svg.attr("viewBox", `0 0 ${width} ${height}`);
+  return true;
 }
 
 function initLayout() {
@@ -252,17 +548,36 @@ function initLayout() {
   layoutBound = true;
   resize();
   resizeHandler = () => {
-    resize();
-    if (rerenderHandler) rerenderHandler();
+    if (resizeRaf) return;
+    resizeRaf = window.requestAnimationFrame(() => {
+      resizeRaf = 0;
+      const changed = resize();
+      if (changed) scheduleRerender();
+    });
   };
   window.addEventListener("resize", resizeHandler);
 }
 
 function teardownLayout() {
   if (resizeHandler) window.removeEventListener("resize", resizeHandler);
+  if (resizeRaf) {
+    window.cancelAnimationFrame(resizeRaf);
+    resizeRaf = 0;
+  }
+  if (rerenderRaf) {
+    window.cancelAnimationFrame(rerenderRaf);
+    rerenderRaf = 0;
+  }
+  if (rerenderTimer) {
+    window.clearTimeout(rerenderTimer);
+    rerenderTimer = 0;
+  }
   resizeHandler = null;
   rerenderHandler = null;
   layoutBound = false;
+  rerenderLastAt = 0;
+  isSmallLayoutActive = false;
+  layoutMode = "wide";
 }
 
 function setupMount(options = {}) {
@@ -281,7 +596,16 @@ function setupMount(options = {}) {
   }
   injectWidgetStyles(mountRoot, options);
   widgetRoot = document.createElement("div");
-  widgetRoot.className = "sea-widget";
+  const resolvedTheme = normalizeTheme(options.theme);
+  widgetRoot.className = `sea-widget sea-theme-${resolvedTheme}`;
+  if (resolvedTheme === "light") {
+    const preset = getLightModePreset(options.lightModePreset);
+    widgetRoot.setAttribute("data-sea-light-mode", preset.id);
+    applyLightModePreset(widgetRoot, preset);
+    ACTIVE_GRAPH_THEME = preset.graph;
+  } else {
+    ACTIVE_GRAPH_THEME = GRAPH_THEME.dark;
+  }
 
   const main = document.createElement("div");
   main.className = "sea-widget-main";
@@ -324,7 +648,44 @@ function setupMount(options = {}) {
 
 const cx = () => width * 0.5;
 const cy = () => height * 0.5;
-const R = () => Math.min(width, height) * CONFIG.polygonRadiusFactor;
+function activePolygonRadiusFactor() {
+  const base = Number(CONFIG.polygonRadiusFactor || 0.29);
+  if (layoutMode === "small") {
+    return Math.max(base, Number(SEA_OPTIONS.smallPolygonRadiusFactor || 0.36));
+  }
+  if (layoutMode === "medium") {
+    return Math.max(base, Number(SEA_OPTIONS.mediumPolygonRadiusFactor || 0.41));
+  }
+  return base;
+}
+const R = () => Math.min(width, height) * activePolygonRadiusFactor();
+
+function scaledMinEdgeDistance() {
+  const base = Math.max(0, Number(CONFIG.minEdgeDistance || 0));
+  if (base <= 0) return 0;
+  const refRadius = Math.max(1, Number(CONFIG.minEdgeDistanceRefRadius || 190));
+  const minScale = Math.max(0.05, Number(CONFIG.minEdgeDistanceScaleMin || 0.55));
+  const maxScale = Math.max(minScale, Number(CONFIG.minEdgeDistanceScaleMax || 1.8));
+  const rawScale = R() / refRadius;
+  const scale = Math.max(minScale, Math.min(maxScale, rawScale));
+  return base * scale;
+}
+
+function getViewportNodeScale() {
+  const ref = Math.max(320, Number(SEA_OPTIONS.nodeScaleViewportRef || 700));
+  const radiusRef = Math.max(60, Number(SEA_OPTIONS.nodeScaleRadiusRef || (ref * activePolygonRadiusFactor())));
+  const minScale = Math.max(0.3, Number(SEA_OPTIONS.nodeScaleMin || 0.82));
+  const maxScale = Math.max(minScale, Number(SEA_OPTIONS.nodeScaleMax || 1.26));
+  const exponent = Math.max(0.3, Number(SEA_OPTIONS.nodeScaleExponent || 1.0));
+  const radiusExponent = Math.max(0.3, Number(SEA_OPTIONS.nodeScaleRadiusExponent || 1.0));
+  const blend = Math.max(0, Math.min(1, Number(SEA_OPTIONS.nodeScaleBlend || 0.6)));
+  const viewport = Math.max(240, Math.min(width, height));
+  const radius = Math.max(60, R());
+  const viewportScaled = Math.pow(viewport / ref, exponent);
+  const radiusScaled = Math.pow(radius / radiusRef, radiusExponent);
+  const scaled = (viewportScaled * (1 - blend)) + (radiusScaled * blend);
+  return Math.max(minScale, Math.min(maxScale, scaled));
+}
 
 /* ===== src/ui.js ===== */
 let tooltip = null;
@@ -345,6 +706,15 @@ function teardownTooltip() {
   tooltip = null;
 }
 
+function hideTooltipNow() {
+  if (isSelectionEmpty(tooltip)) return;
+  tooltip.interrupt()
+    .style("opacity", 0)
+    .style("display", "none")
+    .style("left", "-9999px")
+    .style("top", "-9999px");
+}
+
 function buildTooltipHTML(d) {
   const img = d.thumb ? `<img class="thumb" src="${d.thumb}" alt=""/>` : ``;
   return `
@@ -358,6 +728,20 @@ function buildTooltipHTML(d) {
 let info = null;
 let legend = null;
 let infoLessonRefs = null;
+let warmedLogoSrc = "";
+let infoRenderToken = 0;
+
+function prewarmImage(src) {
+  const url = String(src || "").trim();
+  if (!url || url === warmedLogoSrc || typeof Image === "undefined") return;
+  warmedLogoSrc = url;
+  const probe = new Image();
+  probe.decoding = "async";
+  probe.src = url;
+  if (typeof probe.decode === "function") {
+    probe.decode().catch(() => {});
+  }
+}
 
 function formatLessonTitle(node) {
   const rawTitle = String(node?.lesson_title || "(untitled)");
@@ -372,6 +756,8 @@ function setInfoMode(refs, mode) {
   if (!root) return;
   root.classList.toggle("mode-init", mode === "init");
   root.classList.toggle("mode-lesson", mode === "lesson");
+  root.classList.toggle("mode-dim", mode === "dim");
+  root.classList.toggle("mode-module", mode === "module");
 }
 
 function setThumbState(wrapEl, imgEl, { src, alt }) {
@@ -392,9 +778,6 @@ function ensureLessonInfoView() {
   info.html(`
     <div class="sea-info-lesson mode-init">
       <div class="info-media">
-        <div class="info-thumb-wrap info-logo-wrap no-thumb">
-          <img class="info-thumb info-logo-thumb" alt="" />
-        </div>
         <div class="info-thumb-wrap info-lesson-wrap no-thumb">
           <img class="info-thumb info-lesson-thumb" alt="" />
         </div>
@@ -423,6 +806,29 @@ function ensureLessonInfoView() {
           <div class="v js-lesson-description"></div>
         </div>
       </div>
+      <div class="info-dim-fields">
+        <div>
+          <div class="k">Dimension</div>
+          <div class="v js-dim-title"></div>
+        </div>
+        <div>
+          <div class="k">Summary</div>
+          <div class="v js-dim-summary"></div>
+        </div>
+        <div>
+          <div class="k">Details</div>
+          <div class="v js-dim-details"></div>
+        </div>
+      </div>
+      <div class="info-module-fields">
+        <div>
+          <div class="v info-lesson-title js-module-panel-title"></div>
+        </div>
+        <div>
+          <div class="k">Module overview</div>
+          <div class="v js-module-panel-description"></div>
+        </div>
+      </div>
     </div>
   `);
 
@@ -430,8 +836,6 @@ function ensureLessonInfoView() {
   const root = host.querySelector(".sea-info-lesson");
   infoLessonRefs = {
     root,
-    logoWrap: host.querySelector(".info-logo-wrap"),
-    logoThumb: host.querySelector(".info-logo-thumb"),
     lessonWrap: host.querySelector(".info-lesson-wrap"),
     lessonThumb: host.querySelector(".info-lesson-thumb"),
     initTitle: host.querySelector(".js-init-title"),
@@ -442,7 +846,16 @@ function ensureLessonInfoView() {
     moduleTitle: host.querySelector(".js-module-title"),
     lessonDescription: host.querySelector(".js-lesson-description"),
     goLessonBtn: host.querySelector(".js-go-lesson"),
+    dimTitle: host.querySelector(".js-dim-title"),
+    dimSummary: host.querySelector(".js-dim-summary"),
+    dimDetails: host.querySelector(".js-dim-details"),
+    modulePanelTitle: host.querySelector(".js-module-panel-title"),
+    modulePanelDescription: host.querySelector(".js-module-panel-description"),
   };
+  if (infoLessonRefs.lessonThumb) {
+    infoLessonRefs.lessonThumb.decoding = "async";
+    infoLessonRefs.lessonThumb.loading = "eager";
+  }
   return infoLessonRefs;
 }
 
@@ -455,23 +868,25 @@ function renderInfoInit() {
   refs.initBody.textContent = String(SEA_OPTIONS.infoInitBody || "Hover or click lessons and dimensions to inspect how content clusters by policy, technology, finance, equity, data, and implementation.");
 
   refs.goLessonBtn.removeAttribute("data-lesson-id");
-  const logoSrc = String(SEA_OPTIONS.logoUrl || "logo.png");
-  setThumbState(refs.logoWrap, refs.logoThumb, {
-    src: logoSrc,
-    alt: "Sustainable Energy Academy logo",
-  });
+  const initImage = String(SEA_OPTIONS.logoUrl || "https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png");
+  prewarmImage(initImage);
   setThumbState(refs.lessonWrap, refs.lessonThumb, {
-    src: "",
-    alt: "",
+    src: initImage,
+    alt: "Sustainable Energy Academy",
   });
 }
 
 function renderInfo(node) {
   if (!node) {
-    renderInfoInit();
+    const token = ++infoRenderToken;
+    window.requestAnimationFrame(() => {
+      if (token !== infoRenderToken) return;
+      renderInfoInit();
+    });
     return;
   }
 
+  infoRenderToken += 1;
   const refs = ensureLessonInfoView();
   setInfoMode(refs, "lesson");
   refs.lessonTitle.textContent = formatLessonTitle(node);
@@ -485,10 +900,6 @@ function renderInfo(node) {
     src: thumbSrc,
     alt: thumbSrc ? `Thumbnail for lesson ${node.lesson_id}` : "No thumbnail available",
   });
-  setThumbState(refs.logoWrap, refs.logoThumb, {
-    src: "",
-    alt: "",
-  });
 }
 
 function renderDimInfo(dim) {
@@ -496,23 +907,35 @@ function renderDimInfo(dim) {
     renderInfoInit();
     return;
   }
-  infoLessonRefs = null;
-  info.html(`
-    <div class="row">
-      <div>
-        <div class="k">Dimension</div>
-        <div class="v">${dim.label || dim.id}</div>
-      </div>
-    </div>
-    <div>
-      <div class="k">Summary</div>
-      <div class="v">${dim.summary || ""}</div>
-    </div>
-    <div>
-      <div class="k">Details</div>
-      <div class="v">${dim.details || ""}</div>
-    </div>
-  `);
+  infoRenderToken += 1;
+  const refs = ensureLessonInfoView();
+  setInfoMode(refs, "dim");
+  refs.dimTitle.textContent = dim.label || dim.id || "";
+  refs.dimSummary.textContent = dim.summary || "";
+  refs.dimDetails.textContent = dim.details || "";
+  const dimImage = String(dim.image || "").trim();
+  if (dimImage) prewarmImage(dimImage);
+  setThumbState(refs.lessonWrap, refs.lessonThumb, {
+    src: dimImage,
+    alt: dimImage ? `${refs.dimTitle.textContent} image` : "",
+  });
+}
+
+function renderModuleInfo(mod) {
+  if (!mod) {
+    renderInfoInit();
+    return;
+  }
+  infoRenderToken += 1;
+  const refs = ensureLessonInfoView();
+  setInfoMode(refs, "module");
+  refs.modulePanelTitle.textContent = mod.title || `Module ${mod.id || ""}`;
+  refs.modulePanelDescription.textContent = mod.description || "";
+  const moduleImg = mod?.image?.src ? String(mod.image.src) : "";
+  setThumbState(refs.lessonWrap, refs.lessonThumb, {
+    src: moduleImg,
+    alt: moduleImg ? `${refs.modulePanelTitle.textContent} image` : "",
+  });
 }
 
 // Render the module legend in the right panel.
@@ -522,7 +945,8 @@ function renderLegend(items) {
   const row = grid.selectAll("div.legend-item")
     .data(items)
     .join("div")
-    .attr("class", "legend-item");
+    .attr("class", "legend-item")
+    .attr("data-module-id", d => String(d.id));
   row.append("span")
     .attr("class", "swatch")
     .style("background", d => d.color);
@@ -707,6 +1131,7 @@ const State = {
   // focus: dimension or node
   activeDim: null,
   lockedDim: null,
+  activeModule: null,
   hoverNode: null,
   lockedNode: null,
   hoverPointer: null,      // {x,y} for gentle follow
@@ -828,8 +1253,32 @@ const DEFAULT_SEA_OPTIONS = {
   useShadowDom: true,
   injectStyles: true,
   styles: "",
+  theme: "light",
+  lightModePreset: "1",
+  selectedModuleId: null,
+  compactBreakpoint: 980,
+  smallBreakpoint: 520,
+  layoutHysteresis: 24,
+  resizeRerenderIntervalMs: 48,
+  resizeSettleMs: 90,
+  resizeKickIntervalMs: 120,
+  resizeKickAlpha: 0.16,
+  mediumPolygonRadiusFactor: 0.41,
+  smallPolygonRadiusFactor: 0.44,
+  nodeSizeBasePx: 8.2,
+  nodeScaleViewportRef: 700,
+  nodeScaleRadiusRef: 200,
+  nodeScaleMin: 0.82,
+  nodeScaleMax: 1.26,
+  nodeScaleExponent: 1.0,
+  nodeScaleRadiusExponent: 1.0,
+  nodeScaleBlend: 0.6,
+  nodeScaleDimBoost: 1.08,
+  minSimWidth: 280,
+  minSimHeight: 260,
   minHeight: 520,
-  logoUrl: "logo.png",
+  dimIconDir: "",
+  logoUrl: "https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png",
   infoInitTitle: "Sustainable Energy Academy",
   infoInitLead: "Explore the lesson map.",
   infoInitBody: "Hover or click lessons and dimensions to inspect how content clusters by policy, technology, finance, equity, data, and implementation.",
@@ -869,6 +1318,25 @@ async function loadJsonData(key) {
   const inline = SEA_OPTIONS.data || {};
   if (inline[key] != null) return inline[key];
   return D3.json(resolveDataUrl(key));
+}
+
+function resolveDimensionIconUrl(icon) {
+  const raw = String(icon || "").trim();
+  if (!raw) return "";
+  if (/^(?:https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:") || raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../")) {
+    return raw;
+  }
+  const dir = String(SEA_OPTIONS.dimIconDir || "").trim().replace(/\/+$/, "");
+  if (!dir) return raw;
+  return `${dir}/${raw.replace(/^\/+/, "")}`;
+}
+
+function normalizeModuleId(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const num = +raw.replace(/[^\d]/g, "");
+  if (Number.isFinite(num) && num > 0) return String(num);
+  return raw;
 }
 
 function setConfigByPath(target, path, value) {
@@ -930,10 +1398,15 @@ function applyGraphConfigTuning(graphConfig) {
 async function main() {
   const graphConfig = await loadJsonData("graphConfig");
   applyGraphConfigTuning(graphConfig);
+  const graphTheme = ACTIVE_GRAPH_THEME || getGraphTheme(SEA_OPTIONS.theme);
 
   // Build order: geometry → anchors → data → links → nodes → interaction → simulation
   const dimMeta = { dimensions: Array.isArray(graphConfig?.dimensions) ? graphConfig.dimensions : [] };
-  const THEMES = (dimMeta?.dimensions || []).map(d => ({ id: d.id, label: d.label || d.id }));
+  const THEMES = (dimMeta?.dimensions || []).map((d) => ({
+    id: d.id,
+    label: d.label || d.id,
+    icon: resolveDimensionIconUrl(d.icon),
+  }));
   const dimMap = new Map((dimMeta?.dimensions || []).map(d => [d.id, d]));
 
   /* ---------- 7.1 Geometry ---------- */
@@ -945,20 +1418,22 @@ async function main() {
   svg.selectAll("*").remove();
   const g = svg.append("g");
 
+  const ringRadius = () => R() * ((CONFIG.dimHoverInnerFactor + CONFIG.dimHoverOuterFactor) * 0.5);
+
   // Outer polygon
   const outerPoly = g.append("path")
     .attr("d", D3.line().curve(D3.curveLinearClosed)(poly))
-    .attr("fill", "rgba(255,255,255,0.015)")
-    .attr("stroke", "rgba(232,236,255,0.14)")
+    .attr("fill", graphTheme.outerFill)
+    .attr("stroke", graphTheme.outerStroke)
     .attr("stroke-width", 1.2);
 
-  // Dimension hover band (light ring)
+  // Dimension hover band
   const hoverRing = g.append("circle")
     .attr("cx", cx())
     .attr("cy", cy())
-    .attr("r", R() * ((CONFIG.dimHoverInnerFactor + CONFIG.dimHoverOuterFactor) * 0.5))
+    .attr("r", ringRadius())
     .attr("fill", "none")
-    .attr("stroke", "rgba(232,236,255,0.16)")
+    .attr("stroke", graphTheme.hoverRing)
     .attr("stroke-width", 1.4)
     .attr("stroke-dasharray", "3 6");
 
@@ -972,40 +1447,197 @@ async function main() {
   const anchorDot = anchorG.append("circle")
     .attr("cx", d => d.x).attr("cy", d => d.y)
     .attr("r", 3.8)
-    .attr("fill", "rgba(232,236,255,0.55)")
+    .attr("fill", graphTheme.anchorDot)
     .style("pointer-events", "none");
+
+  function splitDimensionLabel(raw) {
+    const text = String(raw || "").replace(/\s+/g, " ").trim();
+    if (!text) return [""];
+    const viaDelimiter = text.split(/\s+(?:&|\/)\s+/).map(s => s.trim()).filter(Boolean);
+    if (viaDelimiter.length === 2) return viaDelimiter;
+    if (text.length <= 22) return [text];
+    const words = text.split(" ");
+    let left = [];
+    let right = [];
+    const half = Math.ceil(words.length / 2);
+    left = words.slice(0, half);
+    right = words.slice(half);
+    return [left.join(" "), right.join(" ")].filter(Boolean);
+  }
+
+  function clampPointToViewport(x, y, pad = 0) {
+    const p = Math.max(0, Number(pad) || 0);
+    return {
+      x: Math.max(p, Math.min(width - p, x)),
+      y: Math.max(p, Math.min(height - p, y)),
+    };
+  }
+
+  function anchorLabelCenter(ad) {
+    const outward = Math.max(26, Math.min(54, R() * 0.18));
+    const rawX = ad.x + Math.cos(ad.ang) * outward;
+    const rawY = ad.y + Math.sin(ad.ang) * outward;
+    return clampPointToViewport(rawX, rawY, 28);
+  }
+
+  function dimHitRadius() {
+    const factor = isSmallLayoutActive ? 0.20 : 0.24;
+    return Math.max(24, Math.min(86, R() * factor));
+  }
+
+  function applyAnchorTextLayout(selection) {
+    selection
+      .attr("x", d => anchorLabelCenter(d).x)
+      .attr("y", d => anchorLabelCenter(d).y)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .each(function(d) {
+        const lines = splitDimensionLabel(d.label);
+        const textSel = D3.select(this);
+        textSel.selectAll("tspan").remove();
+        lines.forEach((line, idx) => {
+          textSel.append("tspan")
+            .attr("x", anchorLabelCenter(d).x)
+            .attr("dy", idx === 0 ? (lines.length > 1 ? -6 : 0) : 12)
+            .text(line);
+        });
+      });
+  }
 
   // Dimension label (hover/click)
   const anchorText = anchorG.append("text")
-    .attr("x", d => d.x).attr("y", d => d.y)
-    .attr("dx", d => (Math.cos(d.ang) > 0 ? 10 : -10))
-    .attr("dy", d => (Math.sin(d.ang) > 0 ? 14 : -8))
-    .attr("text-anchor", d => (Math.cos(d.ang) > 0 ? "start" : "end"))
-    .attr("font-size", 12)
-    .attr("fill", "rgba(232,236,255,0.82)")
-    .text(d => d.label)
+    .attr("class", "dimLabel")
+    .attr("font-size", 11.5)
+    .attr("fill", graphTheme.anchorText)
     .style("cursor", "pointer")
     .style("pointer-events", "all");
+  applyAnchorTextLayout(anchorText);
+
+  const anchorIconHalo = anchorG.append("circle")
+    .attr("class", "dimIconHalo")
+    .attr("cx", d => d.x)
+    .attr("cy", d => d.y)
+    .attr("r", 13)
+    .attr("fill", "rgba(255,255,255,0.72)")
+    .attr("stroke", graphTheme.outerStroke)
+    .attr("stroke-width", 1.2)
+    .style("display", "none")
+    .style("opacity", 0);
+
+  const anchorIcon = anchorG.append("image")
+    .attr("class", "dimIcon")
+    .attr("href", d => d.icon || "")
+    .attr("width", 18)
+    .attr("height", 18)
+    .attr("x", d => d.x - 9)
+    .attr("y", d => d.y - 9)
+    .attr("preserveAspectRatio", "xMidYMid meet")
+    .style("filter", "grayscale(1) brightness(0.62) contrast(0.9)")
+    .style("display", "none")
+    .style("opacity", 0)
+    .style("pointer-events", "none");
+
+  // Placeholders avoid temporal-dead-zone errors if users hover dimensions
+  // before data/nodes/simulation are fully initialized.
+  let nodes = [];
+  let nodesSel = D3.select(null);
+  let ringSel = D3.select(null);
+  let sim = null;
+  let moduleMetaByKey = new Map();
+
+  function anchorIconSize(ad) {
+    const focusDim = (State.lockedDim || State.activeDim);
+    if (State.lockedDim && ad.id === State.lockedDim) return 21;
+    if (focusDim && ad.id === focusDim) return 20;
+    return 18;
+  }
+
+  function anchorIconCenter(ad) {
+    const ringRatio = ((CONFIG.dimHoverInnerFactor + CONFIG.dimHoverOuterFactor) * 0.5);
+    const ratio = Math.min(CONFIG.dimHoverOuterFactor - 0.01, ringRatio + 0.11);
+    const rawX = cx() + Math.cos(ad.ang) * (R() * ratio);
+    const rawY = cy() + Math.sin(ad.ang) * (R() * ratio);
+    const pad = anchorIconHaloRadius(ad) + 4;
+    return clampPointToViewport(rawX, rawY, pad);
+  }
+
+  function anchorIconHaloRadius(ad) {
+    return anchorIconSize(ad) * 0.5 + 5;
+  }
+
+  function applyAnchorLabelMode() {
+    const iconMode = !!isSmallLayoutActive;
+    if (!iconMode) hideDimIconTooltip();
+    applyAnchorTextLayout(anchorText);
+    anchorText.style("display", d => (iconMode && d.icon) ? "none" : null);
+    anchorIconHalo
+      .style("display", d => (iconMode && d.icon) ? null : "none")
+      .style("opacity", d => {
+        if (!iconMode || !d.icon) return 0;
+        if (State.lockedDim && d.id !== State.lockedDim) return 0.36;
+        if ((State.lockedDim || State.activeDim) && d.id === (State.lockedDim || State.activeDim)) return 0.68;
+        return 0.52;
+      })
+      .attr("r", d => anchorIconHaloRadius(d))
+      .attr("cx", d => anchorIconCenter(d).x)
+      .attr("cy", d => anchorIconCenter(d).y)
+      .attr("stroke", d => (State.lockedDim && d.id === State.lockedDim) ? "rgba(255,168,64,0.98)" : graphTheme.outerStroke);
+    anchorIcon
+      .style("display", d => (iconMode && d.icon) ? null : "none")
+      .style("opacity", d => {
+        if (!iconMode || !d.icon) return 0;
+        if (State.lockedDim && d.id !== State.lockedDim) return 0.34;
+        if ((State.lockedDim || State.activeDim) && d.id === (State.lockedDim || State.activeDim)) return 0.64;
+        return 0.48;
+      })
+      .attr("width", d => anchorIconSize(d))
+      .attr("height", d => anchorIconSize(d))
+      .attr("x", d => anchorIconCenter(d).x - (anchorIconSize(d) * 0.5))
+      .attr("y", d => anchorIconCenter(d).y - (anchorIconSize(d) * 0.5));
+  }
+
+  function showDimIconTooltip(event, ad) {
+    if (!tooltipsEnabled()) { hideTooltipNow(); return; }
+    if (!isSmallLayoutActive || !ad || isSelectionEmpty(tooltip) || !widgetRoot) return;
+    const rect = widgetRoot.getBoundingClientRect();
+    const tx = event.clientX - rect.left + 12;
+    const ty = event.clientY - rect.top - 12;
+    tooltip.interrupt();
+    tooltip.html(`<div class="t">${ad.label || ad.id}</div>`)
+      .style("display", "block")
+      .style("left", tx + "px")
+      .style("top", ty + "px")
+      .style("opacity", 1);
+  }
+
+  function hideDimIconTooltip() {
+    hideTooltipNow();
+  }
 
   // Large hit target around vertex
   const dimHitSel = anchorG.append("circle")
     .attr("cx", d => d.x).attr("cy", d => d.y)
-    .attr("r", 90)
+    .attr("r", dimHitRadius())
     .attr("class", "dimHit")
     .attr("fill", "transparent")
     .style("cursor", "pointer");
 
-  function dimEnter(event, ad) { setDim(ad.id, false); updateDimTop(); styleAll(); kickSim(0.32); }
-  function dimLeave(event, ad) { setDim(null, false); updateDimTop(); styleAll(); kickSim(0.32); }
+  function dimEnter(event, ad) { setDim(ad.id, false); showDimIconTooltip(event, ad); updateDimTop(); styleAll(); kickSim(0.32); }
+  function dimLeave(event, ad) { setDim(null, false); hideDimIconTooltip(); updateDimTop(); styleAll(); kickSim(0.32); }
 
   anchorText.on("mouseenter", dimEnter).on("mouseleave", dimLeave)
     .on("click", (event, ad) => {
       event.stopPropagation();
+      maybeExitModuleModeForNonModuleClick();
       setDim(ad.id, true);
       if (State.lockedDim) {
         renderDimInfo(dimMap.get(State.lockedDim) || { id: State.lockedDim, label: ad.label });
       } else {
-        renderInfo(null);
+        if (State.activeModule) {
+          renderModuleInfo(moduleMetaByKey.get(State.activeModule) || { id: State.activeModule, title: `Module ${State.activeModule}` });
+        } else {
+          renderInfo(null);
+        }
       }
       updateDimTop();
       styleAll();
@@ -1013,13 +1645,20 @@ async function main() {
     });
 
   dimHitSel.on("mouseenter", dimEnter).on("mouseleave", dimLeave)
+    .on("mousemove", (event, ad) => { showDimIconTooltip(event, ad); })
     .on("click", (event, ad) => {
       event.stopPropagation();
+      maybeExitModuleModeForNonModuleClick();
       setDim(ad.id, true);
+      showDimIconTooltip(event, ad);
       if (State.lockedDim) {
         renderDimInfo(dimMap.get(State.lockedDim) || { id: State.lockedDim, label: ad.label });
       } else {
-        renderInfo(null);
+        if (State.activeModule) {
+          renderModuleInfo(moduleMetaByKey.get(State.activeModule) || { id: State.activeModule, title: `Module ${State.activeModule}` });
+        } else {
+          renderInfo(null);
+        }
       }
       updateDimTop();
       styleAll();
@@ -1093,7 +1732,7 @@ async function main() {
   }
   const thumbMap = buildThumbMap(moduleStructure);
 
-  const nodes = nodesRaw.map(d => ({...d}));
+  nodes = nodesRaw.map(d => ({...d}));
   nodes.forEach(n => {
     n.thumb = thumbMap.get(n.lesson_id) || null;
 
@@ -1104,6 +1743,7 @@ async function main() {
 
     // module numeric for color scale
     n.__moduleNum = +String(n.module_id).replace(/[^\d]/g,"") || +n.module_id || 0;
+    n.__moduleKey = normalizeModuleId(n.module_id) || String(n.__moduleNum);
 
     // initial position random near center
     n.x = cx() + (Math.random()-0.5) * 60;
@@ -1161,22 +1801,74 @@ async function main() {
 
   // Color scale by module # (prefer colors from module_structure.json)
   const moduleNums = Array.from(new Set(nodes.map(n => n.__moduleNum))).sort((a,b)=>a-b);
-  const moduleMeta = new Map((moduleStructure?.modules || []).map(m => {
+  const moduleMetaByNum = new Map();
+  moduleMetaByKey = new Map();
+  (moduleStructure?.modules || []).forEach((m) => {
+    const key = normalizeModuleId(m.id) || String(m.id || "");
     const num = +String(m.id).replace(/[^\d]/g,"") || +m.id || 0;
-    return [num, { title: m.title || `Module ${m.id}`, color: m.color || null }];
-  }));
+    const meta = {
+      key,
+      id: m.id,
+      num,
+      title: m.title || `Module ${m.id}`,
+      color: m.color || null,
+      image: m.image || null,
+      description: m.description || "",
+      icon: m.icon || "",
+    };
+    if (num) moduleMetaByNum.set(num, meta);
+    moduleMetaByKey.set(key, meta);
+  });
   const moduleColors = moduleNums.map((num, idx) =>
-    moduleMeta.get(num)?.color || FALLBACK_MODULE_COLORS[idx % FALLBACK_MODULE_COLORS.length]
+    moduleMetaByNum.get(num)?.color || FALLBACK_MODULE_COLORS[idx % FALLBACK_MODULE_COLORS.length]
   );
   const color = D3.scaleOrdinal(moduleNums, moduleColors);
 
   // Legend (module order + colors)
   const legendItems = moduleNums.map(num => ({
-    id: num,
-    label: moduleMeta.get(num)?.title || `Module ${num}`,
+    id: normalizeModuleId(num) || String(num),
+    label: moduleMetaByNum.get(num)?.title || `Module ${num}`,
     color: color(num),
   }));
   renderLegend(legendItems);
+
+  function activeLegendModuleKey() {
+    if (State.lockedNode) return normalizeModuleId(State.lockedNode.module_id) || State.lockedNode.__moduleKey || null;
+    return State.activeModule || null;
+  }
+
+  function updateLegendHighlight() {
+    const activeKey = activeLegendModuleKey();
+    if (isSelectionEmpty(legend)) return;
+    legend.selectAll(".legend-item")
+      .classed("is-active", d => !!activeKey && String(d.id) === String(activeKey))
+      .style("opacity", d => {
+        if (!activeKey) return 1;
+        return String(d.id) === String(activeKey) ? 1 : 0.58;
+      });
+  }
+
+  function setActiveModuleSelection(moduleId, options = {}) {
+    const next = normalizeModuleId(moduleId);
+    State.activeModule = next || null;
+    if (State.activeModule) {
+      unlockNode();
+      State.hoverNode = null;
+      State.hoverPointer = null;
+      State.lockedDim = null;
+      State.activeDim = null;
+      State.dimBiasTarget = 0.0;
+    }
+    if (options.render !== false) {
+      if (State.activeModule) {
+        renderModuleInfo(moduleMetaByKey.get(State.activeModule) || { id: State.activeModule, title: `Module ${State.activeModule}` });
+      } else if (!State.activeModule && !State.lockedNode && !State.lockedDim && !State.activeDim) {
+        renderInfo(null);
+      }
+    }
+    styleAll();
+    if (options.kick !== false) kickSim(0.18);
+  }
 
   // Link layers
   const linkG = g.append("g").attr("class", "links");
@@ -1184,7 +1876,7 @@ async function main() {
     .data(topoLinks)
     .join("line")
     .attr("class", "topo")
-    .attr("stroke", "rgba(232,236,255,0.07)")
+    .attr("stroke", graphTheme.topoStroke)
     .attr("stroke-width", 1.0);
 
   let focusTopoSel = linkG.append("g").attr("class", "focusLinks")
@@ -1194,7 +1886,7 @@ async function main() {
     .data(dimLinks)
     .join("line")
     .attr("class", d => `dim dim-${d.dim}`)
-    .attr("stroke", "rgba(232,236,255,0.08)")
+    .attr("stroke", graphTheme.dimStroke)
     .attr("stroke-width", 1.0);
 
   /* ---------- 7.5 Nodes ---------- */
@@ -1207,18 +1899,18 @@ async function main() {
     return "M" + pts.map(p => p.join(",")).join("L") + "Z";
   }
 
-  const nodesSel = nodeG.selectAll("path.node")
+  nodesSel = nodeG.selectAll("path.node")
     .data(nodes, d => d.lesson_id)
     .join("path")
     .attr("class", "node")
     .attr("d", d => hexPath(d.size))
     .attr("fill", d => color(d.__moduleNum))
-    .attr("stroke", "rgba(10,14,30,0.22)")
+    .attr("stroke", graphTheme.nodeStroke)
     .attr("stroke-width", 1.0)
     .style("cursor", "pointer");
 
   // White highlight ring for "same module as hovered/locked node"
-  const ringSel = nodeG.selectAll("path.ring")
+  ringSel = nodeG.selectAll("path.ring")
     .data(nodes, d => d.lesson_id)
     .join("path")
     .attr("class", "ring")
@@ -1259,6 +1951,7 @@ async function main() {
   /* ---------- 7.6 Interaction: nodes ---------- */
 
   function showTooltip(event, d) {
+    if (!tooltipsEnabled()) { hideTooltipNow(); return; }
     if (isSelectionEmpty(tooltip) || !widgetRoot) return;
     const rect = widgetRoot.getBoundingClientRect();
     const tx = event.clientX - rect.left + 12;
@@ -1273,6 +1966,7 @@ async function main() {
   }
 
   function hideTooltip() {
+    if (!tooltipsEnabled()) { hideTooltipNow(); return; }
     if (isSelectionEmpty(tooltip)) return;
     tooltip.interrupt();
     tooltip
@@ -1284,11 +1978,29 @@ async function main() {
       });
   }
 
+  function nodeModuleKey(node) {
+    return normalizeModuleId(node?.module_id) || node?.__moduleKey || null;
+  }
+
+  function maybeExitModuleModeForNodeClick(node) {
+    if (!State.activeModule) return false;
+    const keep = nodeModuleKey(node) === State.activeModule;
+    if (keep) return false;
+    setActiveModuleSelection(null, { render: false, kick: false });
+    return true;
+  }
+
+  function maybeExitModuleModeForNonModuleClick() {
+    if (!State.activeModule) return false;
+    setActiveModuleSelection(null, { render: false, kick: false });
+    return true;
+  }
+
   function nodeEnter(event, d) {
     const p = D3.pointer(event, svg.node());
     setHoverNode(d, {x:p[0], y:p[1]});
     showTooltip(event, d);
-    if (!State.lockedNode) renderInfo(d);
+    if (!State.lockedNode && !State.activeModule) renderInfo(d);
     styleAll();
     kickSim(0.32);
   }
@@ -1313,6 +2025,8 @@ async function main() {
     event.stopPropagation();
     State.clickStartedOnNode = true;
 
+    maybeExitModuleModeForNodeClick(d);
+
     // Always lock (do not toggle off here). Unlock by clicking the background.
     lockNode(d);
     updateFocusLinks();
@@ -1328,6 +2042,8 @@ async function main() {
     if (State.suppressNextClick) return;
     event.stopPropagation();
     State.clickStartedOnNode = false;
+
+    maybeExitModuleModeForNodeClick(d);
 
     lockNode(d);
     updateFocusLinks();
@@ -1349,9 +2065,14 @@ async function main() {
       if (t.closest(".dim")) return;
       if (t.closest(".dimLabel")) return;
     }
-    if (State.lockedNode || State.lockedDim || State.activeDim) {
+    const clearedModule = maybeExitModuleModeForNonModuleClick();
+    if (clearedModule || State.lockedNode || State.lockedDim || State.activeDim || State.activeModule) {
       clearFocus();
-      renderInfo(null);
+      if (State.activeModule) {
+        renderModuleInfo(moduleMetaByKey.get(State.activeModule) || { id: State.activeModule, title: `Module ${State.activeModule}` });
+      } else {
+        renderInfo(null);
+      }
       hideTooltip();
       updateFocusLinks();
       updateDimTop();
@@ -1367,11 +2088,16 @@ async function main() {
     .on("click", nodeClick);
 
   /* Dragging: locks node and lets user reposition (updates weights based on position inside polygon) */
+  let dragBodyUserSelect = "";
   const drag = D3.drag()
     .on("start", (event, d) => {
       /* stopPropagation handled by pointerdown */
       d.__down = { x: event.x, y: event.y, moved: false, dragging: false };
       // Do not lock on down; a pure click should lock via nodeClick.
+      if (document?.body) {
+        dragBodyUserSelect = document.body.style.userSelect || "";
+        document.body.style.userSelect = "none";
+      }
     })
     .on("drag", (event, d) => {
       const p = D3.pointer(event, svg.node());
@@ -1415,6 +2141,7 @@ async function main() {
     .on("end", (event, d) => {
       const wasDrag = !!d.__down?.dragging;
       d.__down = null;
+      if (document?.body) document.body.style.userSelect = dragBodyUserSelect;
 
       if (wasDrag) {
         if (!(State.lockedNode && State.lockedNode.id === d.id)) {
@@ -1478,6 +2205,8 @@ async function main() {
   function updateSizes() {
     const f = focusDescriptor();
     const fp = computeFocusPoint(f);
+    const nodePxBase = Math.max(1, Number(SEA_OPTIONS.nodeSizeBasePx || 8.2));
+    const nodeViewportScale = getViewportNodeScale() * ((f.type === "dim") ? Math.max(0.7, Number(SEA_OPTIONS.nodeScaleDimBoost || 1.08)) : 1);
 
     nodes.forEach(n => {
       // Base size ALWAYS depends on distance to center (gives shape even in focus modes)
@@ -1536,42 +2265,51 @@ async function main() {
       }
 
       // Smooth ease into rendered radius (scaled to pixels)
-      n.size += (n.sizeTarget * 8.2 - n.size) * CONFIG.sizeEase;
+      n.size += (n.sizeTarget * nodePxBase * nodeViewportScale - n.size) * CONFIG.sizeEase;
     });
   }
 
   function styleAll() {
     // Node size & position are driven by tick. This only adjusts visual emphasis.
     const f = focusDescriptor();
+    const moduleKey = (State.lockedDim || State.activeDim) ? null : State.activeModule;
 
     nodesSel
       .attr("stroke", d => {
         if (State.lockedNode && d === State.lockedNode) return "rgba(255,168,64,0.95)";
-        if (State.hoverNode && d === State.hoverNode) return "rgba(255,255,255,0.92)";
-        if (d === f.node && (f.type === "node" || f.type === "hover")) return "rgba(255,255,255,0.92)";
-        return "rgba(10,14,30,0.22)";
+        if (State.hoverNode && d === State.hoverNode) return graphTheme.focusStroke;
+        if (moduleKey && d.__moduleKey === moduleKey) return graphTheme.focusStroke;
+        if (d === f.node && (f.type === "node" || f.type === "hover")) return graphTheme.focusStroke;
+        return graphTheme.nodeStroke;
       })
       .attr("stroke-width", d => {
         if (State.lockedNode && d === State.lockedNode) return 3.0;
         if (State.hoverNode && d === State.hoverNode) return 2.4;
+        if (moduleKey && d.__moduleKey === moduleKey) return 2.0;
         if (d === f.node && (f.type === "node" || f.type === "hover")) return 2.4;
         return 1.0;
       })
-      .attr("fill-opacity", d => (State.activeDim && State.activeDim !== null) ? 0.92 : 0.92);
+      .attr("fill-opacity", d => {
+        if (moduleKey) return d.__moduleKey === moduleKey ? 0.95 : 0.24;
+        return 0.92;
+      });
 
     // Rings: show for same-module nodes when hovering/locked
     const ref = (State.lockedNode || State.hoverNode);
-    const refMod = ref ? ref.module_id : null;
+    const refMod = ref ? (normalizeModuleId(ref.module_id) || ref.__moduleKey) : null;
+    const ringModule = refMod || moduleKey;
     ringSel
-      .attr("stroke", d => (refMod && d.module_id === refMod && d !== ref) ? "rgba(255,255,255,0.60)" : "rgba(255,255,255,0)")
-      .attr("stroke-width", d => (refMod && d.module_id === refMod && d !== ref) ? 2.0 : 0);
+      .attr("stroke", d => (ringModule && d.__moduleKey === ringModule && d !== ref) ? graphTheme.moduleRing : "rgba(0,0,0,0)")
+      .attr("stroke-width", d => (ringModule && d.__moduleKey === ringModule && d !== ref) ? 2.0 : 0);
 
     // Dimension text cue when locked
     anchorText
       .style("font-weight", a => (State.lockedDim && a.id === State.lockedDim) ? 800 : (((State.lockedDim || State.activeDim) && a.id === (State.lockedDim || State.activeDim)) ? 700 : 500))
-      .style("fill", a => (State.lockedDim && a.id === State.lockedDim) ? "rgba(255,168,64,0.98)" : "rgba(232,236,255,0.82)")
+      .style("fill", a => (State.lockedDim && a.id === State.lockedDim) ? "rgba(255,168,64,0.98)" : graphTheme.anchorText)
       .style("text-decoration", a => (State.activeDim && !State.lockedDim && a.id === State.activeDim) ? "underline" : "none")
       .style("opacity", a => (State.lockedDim && a.id !== State.lockedDim) ? 0.65 : 1);
+    updateLegendHighlight();
+    applyAnchorLabelMode();
   
   // Dimension top-K highlight (on hover or lock)
   function applyDimTopHighlight() {
@@ -1605,7 +2343,7 @@ async function main() {
       .attr("y1", d => (Amap.get(d.source)?.y ?? 0))
       .attr("x2", d => (nodeById.get(d.target)?.x ?? 0))
       .attr("y2", d => (nodeById.get(d.target)?.y ?? 0))
-      .attr("stroke", d => (State.activeDim === d.dim) ? "rgba(232,236,255,0.18)" : "rgba(232,236,255,0.08)")
+      .attr("stroke", d => (State.activeDim === d.dim) ? graphTheme.dimLinkActive : graphTheme.dimLinkInactive)
       .attr("stroke-width", d => (State.activeDim === d.dim) ? 1.8 : 1.0);
 
     focusTopoSel
@@ -1760,7 +2498,6 @@ function dimMoveRamp() {
   }
 
   // D3 simulation (lightweight): we use it mainly for collision integration + smooth momentum
-  let sim = null;
   
   // Keep a tiny heartbeat so drift/jitter + size easing remain perceptible even after settling.
   // Without this, the simulation cools to a stop and time-based drift appears to "turn off".
@@ -1777,6 +2514,7 @@ function dimMoveRamp() {
     .on("tick", () => {
       applyField(sim.alpha());
       updateHeartbeat();
+      const edgeMargin = scaledMinEdgeDistance();
 
       // integrate constraints
       nodes.forEach(n => {
@@ -1786,7 +2524,7 @@ function dimMoveRamp() {
         }
         // hard clamp + soft barrier
         clampToPolygon(n, planes);
-        softBarrier(n, planes, CONFIG.minEdgeDistance);
+        softBarrier(n, planes, edgeMargin);
       });
 
       // visuals
@@ -1800,18 +2538,27 @@ function dimMoveRamp() {
 
   // Initial styling
   styleAll();
+  if (SEA_OPTIONS.selectedModuleId != null && SEA_OPTIONS.selectedModuleId !== "") {
+    setActiveModuleSelection(SEA_OPTIONS.selectedModuleId, { kick: false });
+  }
   let prevCx = cx();
   let prevCy = cy();
+  let prevRadius = Math.max(1, R());
+  let lastResizeKickAt = 0;
 
   rerenderHandler = () => {
-    const dx = cx() - prevCx;
-    const dy = cy() - prevCy;
+    const nextCx = cx();
+    const nextCy = cy();
+    const nextRadius = Math.max(1, R());
+    const scaleRaw = nextRadius / Math.max(1, prevRadius);
+    const scale = Math.max(0.35, Math.min(3, scaleRaw));
 
-    // Shift nodes to preserve visual centroid on resize.
+    // Scale around centroid to preserve relative layout across responsive size changes.
     nodes.forEach(n => {
-      n.x += dx; n.y += dy;
-      if (n.fx != null) n.fx += dx;
-      if (n.fy != null) n.fy += dy;
+      n.x = nextCx + (n.x - prevCx) * scale;
+      n.y = nextCy + (n.y - prevCy) * scale;
+      if (n.fx != null) n.fx = nextCx + (n.fx - prevCx) * scale;
+      if (n.fy != null) n.fy = nextCy + (n.fy - prevCy) * scale;
     });
 
     // Recompute geometry based on new size.
@@ -1825,31 +2572,51 @@ function dimMoveRamp() {
     hoverRing
       .attr("cx", cx())
       .attr("cy", cy())
-      .attr("r", R() * ((CONFIG.dimHoverInnerFactor + CONFIG.dimHoverOuterFactor) * 0.5));
+      .attr("r", ringRadius());
 
     anchorG.data(A);
     anchorDot.data(A).attr("cx", d => d.x).attr("cy", d => d.y);
-    anchorText.data(A)
-      .attr("x", d => d.x).attr("y", d => d.y)
-      .attr("dx", d => (Math.cos(d.ang) > 0 ? 10 : -10))
-      .attr("dy", d => (Math.sin(d.ang) > 0 ? 14 : -8))
-      .attr("text-anchor", d => (Math.cos(d.ang) > 0 ? "start" : "end"));
-    dimHitSel.data(A).attr("cx", d => d.x).attr("cy", d => d.y);
+    anchorText.data(A);
+    anchorIconHalo.data(A);
+    anchorIcon.data(A)
+      .attr("href", d => d.icon || "");
+    dimHitSel.data(A)
+      .attr("cx", d => d.x)
+      .attr("cy", d => d.y)
+      .attr("r", dimHitRadius());
+    applyAnchorLabelMode();
 
     // Update base targets for new center/anchors
     recomputeBaseTargets();
 
-    prevCx = cx();
-    prevCy = cy();
-    kickSim(0.35);
+    prevCx = nextCx;
+    prevCy = nextCy;
+    prevRadius = nextRadius;
+    const now = performance.now();
+    const kickEvery = Math.max(16, Number(SEA_OPTIONS.resizeKickIntervalMs || 120));
+    if ((now - lastResizeKickAt) >= kickEvery) {
+      const alpha = Math.max(0.01, Math.min(0.6, Number(SEA_OPTIONS.resizeKickAlpha || 0.16)));
+      kickSim(alpha);
+      lastResizeKickAt = now;
+    }
   };
 
   return {
+    setModuleSelection(moduleId) {
+      setActiveModuleSelection(moduleId);
+    },
+    clearModuleSelection() {
+      setActiveModuleSelection(null);
+    },
+    getModuleSelection() {
+      return State.activeModule || null;
+    },
     // Runtime-level cleanup used by integration-level destroy().
     // Stops forces and unbinds per-instance SVG handlers.
     destroy() {
       rerenderHandler = null;
       svg.on("mousemove", null).on("mouseleave", null).on("click", null);
+      if (document?.body) document.body.style.userSelect = dragBodyUserSelect;
       if (sim) {
         sim.stop();
         sim = null;
@@ -1880,11 +2647,32 @@ Options:
 - useShadowDom: mount widget inside Shadow DOM for style isolation
 - injectStyles: inject built-in widget styles into mount root
 - styles: optional CSS override string used when injectStyles is true
+- theme: "light" | "dark" (default "light")
+- lightModePreset: "1"..."10" (light theme color preset id)
+- selectedModuleId: optional initial module selection id ("1", "2", ...)
+- compactBreakpoint: width where side panel stacks below viz
+- smallBreakpoint: width where dimension labels switch to icons
+- layoutHysteresis: extra px buffer to prevent resize mode thrash at breakpoints
+- resizeRerenderIntervalMs: max rate (ms) for live rerender during active resize
+- resizeSettleMs: trailing debounce delay before expensive rerender after resize
+- resizeKickIntervalMs / resizeKickAlpha: throttle simulation restarts while resizing
+- mediumPolygonRadiusFactor: minimum polygon radius factor while in stacked medium mode
+- smallPolygonRadiusFactor: minimum polygon radius factor while in stacked small/icon mode
+- nodeSizeBasePx: baseline hex radius multiplier before viewport scaling
+- nodeScaleViewportRef: viewport reference (min side px) where node scale equals 1
+- nodeScaleRadiusRef: radius reference used for polygon-aware scaling
+- nodeScaleMin / nodeScaleMax / nodeScaleExponent: clamp and shape viewport-driven node scaling
+- nodeScaleRadiusExponent / nodeScaleBlend: tune radius-vs-viewport blend
+- nodeScaleDimBoost: extra size scale while a dimension focus is active
+- dimIconDir: base directory used for relative dimension icon filenames
 - minHeight: minimum mount height for generated svg host
 
 Instance:
 - svg: mounted svg DOM node
 - config: live config object for diagnostics
+- setModuleSelection(moduleId): externally trigger module mode
+- clearModuleSelection(): clear externally selected module mode
+- getModuleSelection(): read current external module selection
 - destroy(): full cleanup for React unmount/toggle transitions
 */
 async function createSEALessonMap(options = {}) {
@@ -1899,6 +2687,7 @@ async function createSEALessonMap(options = {}) {
     ...DEFAULT_SEA_OPTIONS,
     ...options,
   };
+  prewarmImage(String(SEA_OPTIONS.logoUrl || "https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png"));
   await ensureD3(SEA_OPTIONS);
   setupMount(SEA_OPTIONS);
   renderInfoInit();
@@ -1917,6 +2706,9 @@ async function createSEALessonMap(options = {}) {
     return {
       svg: null,
       config: CONFIG,
+      setModuleSelection() {},
+      clearModuleSelection() {},
+      getModuleSelection() { return null; },
       destroy() {},
     };
   }
@@ -1925,6 +2717,20 @@ async function createSEALessonMap(options = {}) {
   const instance = {
     svg: svg.node(),
     config: CONFIG,
+    setModuleSelection(moduleId) {
+      if (!runtime || typeof runtime.setModuleSelection !== "function") return;
+      SEA_OPTIONS.selectedModuleId = moduleId;
+      runtime.setModuleSelection(moduleId);
+    },
+    clearModuleSelection() {
+      if (!runtime || typeof runtime.clearModuleSelection !== "function") return;
+      SEA_OPTIONS.selectedModuleId = null;
+      runtime.clearModuleSelection();
+    },
+    getModuleSelection() {
+      if (!runtime || typeof runtime.getModuleSelection !== "function") return null;
+      return runtime.getModuleSelection();
+    },
     // Integration-level cleanup:
     // removes listeners, tooltip, simulation and mounted svg content.
     destroy() {
@@ -1954,9 +2760,26 @@ async function createSEALessonMap(options = {}) {
   return instance;
 }
 
+createSEALessonMap.lightModeOptions = LIGHT_MODE_OPTIONS;
+
 if (typeof window !== "undefined") {
   window.createSEALessonMap = createSEALessonMap;
+  window.SEA_LIGHT_MODE_OPTIONS = LIGHT_MODE_OPTIONS;
+  window.setSEALessonMapModule = (moduleId) => {
+    if (activeInstance && typeof activeInstance.setModuleSelection === "function") {
+      activeInstance.setModuleSelection(moduleId);
+    }
+  };
+  window.clearSEALessonMapModule = () => {
+    if (activeInstance && typeof activeInstance.clearModuleSelection === "function") {
+      activeInstance.clearModuleSelection();
+    }
+  };
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { createSEALessonMap, default: createSEALessonMap };
+  module.exports = {
+    createSEALessonMap,
+    default: createSEALessonMap,
+    lightModeOptions: LIGHT_MODE_OPTIONS,
+  };
 }

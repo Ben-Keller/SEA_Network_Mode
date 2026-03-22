@@ -73,6 +73,8 @@ Important behavior:
 - Purpose: pre-fetched in-memory data supplied by host app.
 - Expected formats:
   - JSON keys: parsed object/array.
+- Note: dimension assets (`dimensions[].icon`, `dimensions[].image`) should be provided in `graphConfig`
+  so visual assets can be changed from CMS without code changes.
 
 `options.minHeight`
 - Type: `number`
@@ -109,9 +111,29 @@ Important behavior:
 - Default: `""` (uses built-in CSS)
 - Purpose: provide a custom CSS string (used when `injectStyles` is enabled).
 
+`options.theme`
+- Type: `"light" | "dark"`
+- Default: `"light"`
+- Purpose: sets widget visual theme for contrast/background (light recommended on academy pages).
+
+`options.lightModePreset`
+- Type: `"1"` ... `"10"`
+- Default: `"1"`
+- Purpose: selects one of 10 light-theme color presets (background/border/label treatment).
+
+`options.compactBreakpoint`
+- Type: `number`
+- Default: `980`
+- Purpose: switches widget to stacked/compact layout when container width is at or below this value.
+
+`options.minSimWidth`, `options.minSimHeight`
+- Type: `number`
+- Defaults: `280`, `260`
+- Purpose: minimum internal simulation viewport size for narrow embeds.
+
 `options.logoUrl`
 - Type: `string`
-- Default: `"logo.png"`
+- Default: `"https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png"`
 - Purpose: logo used in the info panel reset/init state.
 
 `options.infoInitTitle`
@@ -156,6 +178,8 @@ Implication:
 - `dimensions[]` item:
   - `id` (string, required): weight key used in lesson records.
   - `label` (string, recommended): anchor label.
+  - `icon` (string, recommended): dimension icon URL/path (used in small/mobile icon mode).
+  - `image` (string, optional): dimension image URL/path shown in the info panel.
   - `summary` (string, optional): shown in dimension info state.
   - `details` (string, optional): shown in dimension info state.
 
