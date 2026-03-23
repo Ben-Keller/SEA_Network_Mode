@@ -1086,7 +1086,7 @@ function setDim(dimId, lock=false) {
     } else {
       State.lockedDim = dimId;
       State.activeDim = dimId;
-      State.lockedNode = null; // locking a dim clears node lock
+      unlockNode(); // locking a dim clears node lock and any pinning
     }
   } else {
     if (State.lockedDim) return;
@@ -1103,12 +1103,22 @@ function setHoverNode(n, pointer=null) {
   State.hoverPointer = pointer;
 }
 
-function lockNode(n) {
+function lockNode(n, options = {}) {
+  const pin = options.pin !== false;
+  if (State.lockedNode && State.lockedNode !== n) {
+    State.lockedNode.fx = null;
+    State.lockedNode.fy = null;
+  }
   State.lockedNode = n;
-  n.fx = n.x;
-  n.fy = n.y;
-  n.vx = 0;
-  n.vy = 0;
+  if (pin) {
+    n.fx = n.x;
+    n.fy = n.y;
+    n.vx = 0;
+    n.vy = 0;
+  } else {
+    n.fx = null;
+    n.fy = null;
+  }
   State.hoverNode = null;
   State.hoverPointer = null;
   State.lockedDim = null;
@@ -1954,7 +1964,7 @@ async function main() {
     maybeExitModuleModeForNodeClick(d);
 
     // Always lock (do not toggle off here). Unlock by clicking the background.
-    lockNode(d);
+    lockNode(d, { pin: true });
     updateFocusLinks();
     renderInfo(d);
     showTooltip(event, d);
@@ -1971,7 +1981,7 @@ async function main() {
 
     maybeExitModuleModeForNodeClick(d);
 
-    lockNode(d);
+    lockNode(d, { pin: true });
     updateFocusLinks();
     renderInfo(d);
     showTooltip(event, d);
@@ -2034,11 +2044,9 @@ async function main() {
       if (d.__down && moved) d.__down.moved = true;
       if (d.__down && d.__down.moved && !d.__down.dragging) {
         d.__down.dragging = true;
-        lockNode(d);
+        lockNode(d, { pin: true });
         updateFocusLinks();
         renderInfo(d);
-        d.fx = d.x;
-        d.fy = d.y;
       }
 
       if (!d.__down?.dragging) return;
@@ -2070,7 +2078,10 @@ async function main() {
       if (document?.body) document.body.style.userSelect = dragBodyUserSelect;
 
       if (wasDrag) {
-        if (!(State.lockedNode && State.lockedNode.id === d.id)) {
+        if (State.lockedNode === d) {
+          d.fx = d.x;
+          d.fy = d.y;
+        } else {
           d.fx = null;
           d.fy = null;
         }
