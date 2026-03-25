@@ -495,11 +495,20 @@ function teardownLayout() {
   layoutMode = "wide";
 }
 
-function setupMount(options = {}) {
+function resolveContainerElement(containerOption) {
+  if (typeof document === "undefined") return null;
   const defaultHost = document.querySelector("#sea-viz") || document.querySelector("#viz");
-  const host = (typeof options.container === "string")
-    ? document.querySelector(options.container)
-    : (options.container || defaultHost);
+  if (typeof containerOption === "string") {
+    return document.querySelector(containerOption) || defaultHost || null;
+  }
+  if (containerOption && typeof containerOption === "object" && containerOption.nodeType === 1) {
+    return containerOption;
+  }
+  return defaultHost || null;
+}
+
+function setupMount(options = {}) {
+  const host = resolveContainerElement(options.container);
   mountEl = host || document.body;
   const useShadowDom = !!mountEl?.attachShadow;
   if (useShadowDom) {
@@ -859,6 +868,65 @@ function renderLegend(items) {
     .attr("class", "swatch")
     .style("background", d => d.color);
   row.append("span").text(d => d.label);
+}
+
+function escapeHtml(raw) {
+  return String(raw || "").replace(/[&<>"']/g, (ch) => {
+    if (ch === "&") return "&amp;";
+    if (ch === "<") return "&lt;";
+    if (ch === ">") return "&gt;";
+    if (ch === "\"") return "&quot;";
+    return "&#39;";
+  });
+}
+
+function renderWidgetErrorState(error, fallbackTarget = null) {
+  const message = String(error?.message || error || "Unknown initialization error.");
+  if (!isSelectionEmpty(info)) {
+    info.html(`
+      <div class="empty">
+        <div class="v info-lesson-title">Unable to load network visualization.</div>
+        <div class="v">${escapeHtml(message)}</div>
+      </div>
+    `);
+  }
+  if (!isSelectionEmpty(legend)) legend.html("");
+  if (!isSelectionEmpty(svg)) {
+    svg.selectAll("*").remove();
+    svg.append("text")
+      .attr("x", "50%")
+      .attr("y", "50%")
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .attr("fill", "rgba(180,68,68,0.9)")
+      .attr("font-size", 13)
+      .text("Unable to load visualization");
+    return;
+  }
+  if (fallbackTarget && fallbackTarget.innerHTML != null) {
+    fallbackTarget.innerHTML = `
+      <div style="padding:12px;border:1px solid rgba(180,68,68,0.35);border-radius:10px;color:#7a1e1e;background:rgba(255,244,244,0.92);font:13px/1.35 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;">
+        <div style="font-weight:650;margin-bottom:4px;">Unable to load network visualization.</div>
+        <div>${escapeHtml(message)}</div>
+      </div>
+    `;
+  }
+}
+
+function emitWidgetError(error, explicitTarget = null) {
+  if (typeof CustomEvent === "undefined") return;
+  const target = explicitTarget || mountEl || null;
+  const payload = {
+    detail: {
+      message: String(error?.message || error || "Unknown initialization error."),
+      error,
+    },
+  };
+  if (target && typeof target.dispatchEvent === "function") {
+    target.dispatchEvent(new CustomEvent("sea-widget:error", payload));
+  } else if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    window.dispatchEvent(new CustomEvent("sea-widget:error", payload));
+  }
 }
 
 /* ===== src/geometry.js ===== */
@@ -1253,7 +1321,13 @@ function resolveDataUrl(key) {
 async function loadJsonData(key) {
   const inline = SEA_OPTIONS.data || {};
   if (inline[key] != null) return inline[key];
-  return D3.json(resolveDataUrl(key));
+  const url = resolveDataUrl(key);
+  try {
+    return await D3.json(url);
+  } catch (err) {
+    const reason = (err && err.message) ? err.message : String(err);
+    throw new Error(`[SEA] Failed to load "${key}" from "${url}": ${reason}`);
+  }
 }
 
 function resolveDimensionIconUrl(icon) {
@@ -1786,6 +1860,11 @@ async function main() {
 
   function setActiveModuleSelection(moduleId, options = {}) {
     const next = normalizeModuleId(moduleId);
+    if (!options.force && next === State.activeModule) {
+      // Idempotent guard: repeated external calls with same module id should not
+      // reset node selection or overwrite the current info panel state.
+      return;
+    }
     State.activeModule = next || null;
     if (State.activeModule) {
       unlockNode();
@@ -2443,32 +2522,42 @@ function dimMoveRamp() {
     const moving = (CONFIG.driftStrength > 0) || (CONFIG.jitterStrength > 0) || (State.activeDim != null) || (State.hoverNode != null) || (State.lockedNode != null);
     sim.alphaTarget(moving ? 0.018 : 0.010);
   }
+  let tickFailed = false;
   sim = D3.forceSimulation(nodes)
     .alphaDecay(0.018)
     .velocityDecay(0.38)
     .force("collide", D3.forceCollide().radius(collideRadius).strength(CONFIG.collideStrength))
     .force("charge", D3.forceManyBody().strength(-0.9))
     .on("tick", () => {
-      applyField(sim.alpha());
-      updateHeartbeat();
-      const edgeMargin = scaledMinEdgeDistance();
+      if (tickFailed) return;
+      try {
+        applyField(sim.alpha());
+        updateHeartbeat();
+        const edgeMargin = scaledMinEdgeDistance();
 
-      // integrate constraints
-      nodes.forEach(n => {
-        if (n.fx != null && n.fy != null) {
-          n.x = n.fx; n.y = n.fy;
-          n.vx *= 0.4; n.vy *= 0.4;
-        }
-        // hard clamp + soft barrier
-        clampToPolygon(n, planes);
-        softBarrier(n, planes, edgeMargin);
-      });
+        // integrate constraints
+        nodes.forEach(n => {
+          if (n.fx != null && n.fy != null) {
+            n.x = n.fx; n.y = n.fy;
+            n.vx *= 0.4; n.vy *= 0.4;
+          }
+          // hard clamp + soft barrier
+          clampToPolygon(n, planes);
+          softBarrier(n, planes, edgeMargin);
+        });
 
-      // visuals
-      updateSizes();
-      nodesSel.attr("transform", d => `translate(${d.x},${d.y})`).attr("d", d => hexPath(d.size));
-      ringSel.attr("transform", d => `translate(${d.x},${d.y})`).attr("d", d => hexPath(d.size*1.25));
-      updateLinks();
+        // visuals
+        updateSizes();
+        nodesSel.attr("transform", d => `translate(${d.x},${d.y})`).attr("d", d => hexPath(d.size));
+        ringSel.attr("transform", d => `translate(${d.x},${d.y})`).attr("d", d => hexPath(d.size*1.25));
+        updateLinks();
+      } catch (err) {
+        tickFailed = true;
+        const error = (err instanceof Error) ? err : new Error(String(err));
+        console.error("[SEA] Simulation tick failed:", error);
+        emitWidgetError(error);
+        if (sim) sim.stop();
+      }
     });
 
   function kickSim(a){ if(sim){ updateHeartbeat(); sim.alpha(a).restart(); } }
@@ -2590,91 +2679,119 @@ Instance:
 - clearModuleSelection(): clear externally selected module mode
 - getModuleSelection(): read current external module selection
 - destroy(): full cleanup for React unmount/toggle transitions
+
+Errors:
+- Promise rejects on initialization/data-load failures
+- mount container dispatches CustomEvent "sea-widget:error" with { message, error } (falls back to window)
 */
 async function createSEALessonMap(options = {}) {
   const token = ++createToken;
   if (activeInstance && typeof activeInstance.destroy === "function") {
     activeInstance.destroy();
   }
+  const errorTarget = resolveContainerElement(options?.container);
 
-  resetConfig();
-  resetState();
-  const publicOptions = normalizePublicOptions(options);
-  SEA_OPTIONS = {
-    ...DEFAULT_SEA_OPTIONS,
-    ...publicOptions,
-  };
-  prewarmImage(String(SEA_OPTIONS.logoUrl || "https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png"));
-  await ensureD3(SEA_OPTIONS);
-  setupMount(SEA_OPTIONS);
-  renderInfoInit();
-  ensureTooltip();
-  info.on("click.seaGoLesson", (event) => {
-    const btn = event.target?.closest?.(".go-lesson-btn");
-    if (!btn) return;
-    const lessonId = btn.getAttribute("data-lesson-id");
-    if (!lessonId) return;
-    console.log(lessonId);
-  });
-  initLayout();
-  const runtime = await main();
-  if (token !== createToken) {
-    if (runtime && typeof runtime.destroy === "function") runtime.destroy();
-    return {
-      svg: null,
-      config: CONFIG,
-      setModuleSelection() {},
-      clearModuleSelection() {},
-      getModuleSelection() { return null; },
-      destroy() {},
+  try {
+    resetConfig();
+    resetState();
+    const publicOptions = normalizePublicOptions(options);
+    SEA_OPTIONS = {
+      ...DEFAULT_SEA_OPTIONS,
+      ...publicOptions,
     };
-  }
-
-  let destroyed = false;
-  const instance = {
-    svg: svg.node(),
-    config: CONFIG,
-    setModuleSelection(moduleId) {
-      if (!runtime || typeof runtime.setModuleSelection !== "function") return;
-      SEA_OPTIONS.selectedModuleId = moduleId;
-      runtime.setModuleSelection(moduleId);
-    },
-    clearModuleSelection() {
-      if (!runtime || typeof runtime.clearModuleSelection !== "function") return;
-      SEA_OPTIONS.selectedModuleId = null;
-      runtime.clearModuleSelection();
-    },
-    getModuleSelection() {
-      if (!runtime || typeof runtime.getModuleSelection !== "function") return null;
-      return runtime.getModuleSelection();
-    },
-    // Integration-level cleanup:
-    // removes listeners, tooltip, simulation and mounted svg content.
-    destroy() {
-      if (destroyed) return;
-      destroyed = true;
+    prewarmImage(String(SEA_OPTIONS.logoUrl || "https://sehseadata.blob.core.windows.net/images/HeaderImages/SEA.png"));
+    await ensureD3(SEA_OPTIONS);
+    setupMount(SEA_OPTIONS);
+    renderInfoInit();
+    ensureTooltip();
+    info.on("click.seaGoLesson", (event) => {
+      const btn = event.target?.closest?.(".go-lesson-btn");
+      if (!btn) return;
+      const lessonId = btn.getAttribute("data-lesson-id");
+      if (!lessonId) return;
+      console.log(lessonId);
+    });
+    initLayout();
+    const runtime = await main();
+    if (token !== createToken) {
       if (runtime && typeof runtime.destroy === "function") runtime.destroy();
-      teardownLayout();
-      teardownTooltip();
-      info.on("click.seaGoLesson", null);
-      if (mountRoot && mountRoot.innerHTML != null) {
-        mountRoot.innerHTML = "";
-      } else if (widgetRoot && widgetRoot.parentNode) {
-        widgetRoot.parentNode.removeChild(widgetRoot);
-      } else if (!isSelectionEmpty(svg)) {
-        svg.selectAll("*").remove();
-      }
-      svg = null;
-      info = null;
-      legend = null;
-      mountEl = null;
-      mountRoot = null;
-      widgetRoot = null;
-      if (activeInstance === instance) activeInstance = null;
-    },
-  };
-  activeInstance = instance;
-  return instance;
+      return {
+        svg: null,
+        config: CONFIG,
+        setModuleSelection() {},
+        clearModuleSelection() {},
+        getModuleSelection() { return null; },
+        destroy() {},
+      };
+    }
+
+    let destroyed = false;
+    const instance = {
+      svg: svg.node(),
+      config: CONFIG,
+      setModuleSelection(moduleId) {
+        if (!runtime || typeof runtime.setModuleSelection !== "function") return;
+        SEA_OPTIONS.selectedModuleId = moduleId;
+        runtime.setModuleSelection(moduleId);
+      },
+      clearModuleSelection() {
+        if (!runtime || typeof runtime.clearModuleSelection !== "function") return;
+        SEA_OPTIONS.selectedModuleId = null;
+        runtime.clearModuleSelection();
+      },
+      getModuleSelection() {
+        if (!runtime || typeof runtime.getModuleSelection !== "function") return null;
+        return runtime.getModuleSelection();
+      },
+      // Integration-level cleanup:
+      // removes listeners, tooltip, simulation and mounted svg content.
+      destroy() {
+        if (destroyed) return;
+        destroyed = true;
+        if (runtime && typeof runtime.destroy === "function") runtime.destroy();
+        teardownLayout();
+        teardownTooltip();
+        info.on("click.seaGoLesson", null);
+        if (mountRoot && mountRoot.innerHTML != null) {
+          mountRoot.innerHTML = "";
+        } else if (widgetRoot && widgetRoot.parentNode) {
+          widgetRoot.parentNode.removeChild(widgetRoot);
+        } else if (!isSelectionEmpty(svg)) {
+          svg.selectAll("*").remove();
+        }
+        svg = null;
+        info = null;
+        legend = null;
+        mountEl = null;
+        mountRoot = null;
+        widgetRoot = null;
+        if (activeInstance === instance) activeInstance = null;
+      },
+    };
+    activeInstance = instance;
+    return instance;
+  } catch (err) {
+    const error = (err instanceof Error) ? err : new Error(String(err));
+    console.error("[SEA] createSEALessonMap failed", {
+      message: error.message,
+      stack: error.stack,
+      container: (typeof options?.container === "string")
+        ? options.container
+        : ((options?.container && options.container.tagName) ? options.container.tagName : null),
+      hasDataGraphConfig: !!(options?.data && options.data.graphConfig),
+      hasDataModuleStructure: !!(options?.data && options.data.moduleStructure),
+      dataUrlGraphConfig: options?.dataUrls?.graphConfig || null,
+      dataUrlModuleStructure: options?.dataUrls?.moduleStructure || null,
+      autoLoadD3: options?.autoLoadD3 !== false,
+      hasInjectedD3: !!options?.d3,
+    });
+    emitWidgetError(error, errorTarget);
+    renderWidgetErrorState(error, errorTarget);
+    if (!isSelectionEmpty(info)) info.on("click.seaGoLesson", null);
+    teardownLayout();
+    teardownTooltip();
+    throw error;
+  }
 }
 
 if (typeof window !== "undefined") {

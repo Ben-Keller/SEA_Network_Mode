@@ -192,6 +192,7 @@ Node behavior:
 - Hover: tooltip + hover highlight + focus behavior.
 - Click: lock node, pin at current position.
 - Drag: updates node weights using anchor-distance rule.
+- Info panel behavior: selecting a node updates the panel to that lesson consistently.
 
 Dimension behavior:
 - Hover in annulus band: dimension focus by nearest anchor.
@@ -200,6 +201,7 @@ Dimension behavior:
 
 Module behavior (external trigger + in-widget interaction):
 - `setModuleSelection(moduleId)` highlights lessons in that module and shows module info in the panel.
+- Repeated `setModuleSelection` calls with the same `moduleId` are idempotent and do not overwrite an already-selected lesson panel state.
 - Legend highlights the active module in module mode.
 - Selecting a lesson from another module, or clicking away, clears module mode.
 
@@ -343,6 +345,12 @@ No data / partial render:
 
 Toggle leaks / duplicated behavior:
 - Ensure integration always calls `destroy()` in cleanup.
+
+Silent initialization failures:
+- `createSEALessonMap(...)` rejects its Promise when initialization/data loading fails.
+- Widget writes detailed error diagnostics to the console automatically (no extra host wiring required).
+- Widget dispatches a `sea-widget:error` event on the mount container (or `window` fallback) with `detail.message` and `detail.error`.
+- Widget also renders an inline error state instead of remaining partially mounted.
 
 Unexpected config:
 - Check `sea_network_graph_config.json` tuning keys for typos.
