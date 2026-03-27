@@ -3,7 +3,7 @@
 /* ===== src/config.js ===== */
 const CONFIG = {
   // Geometry
-  polygonRadiusFactor: 0.29,
+  polygonRadiusFactor: 0.41,
   insetPadding: 38,               // keeps nodes away from edges (safe polygon inset)
   minEdgeDistance: 6,             // extra margin enforced by soft barrier
   minEdgeDistanceRefRadius: 190,  // radius where minEdgeDistance is used as-is
@@ -156,8 +156,9 @@ const SEA_WIDGET_CSS = `
   --sea-dim-top-stroke: rgba(255,255,255,0.92);
 }
 .sea-widget, .sea-widget * { box-sizing: border-box; }
-.sea-widget .sea-widget-main { flex: 1 1 auto; min-width: 620px; min-height: 0; overflow: hidden; }
-.sea-widget .sea-widget-viz, .sea-widget .sea-widget-viz > svg { width: 100%; height: 100%; min-height: 520px; }
+.sea-widget .sea-widget-main { flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%; display: flex; overflow: hidden; }
+.sea-widget .sea-widget-viz { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.sea-widget .sea-widget-viz, .sea-widget .sea-widget-viz > svg { width: 100%; height: 100%; min-height: 0; }
 .sea-widget .sea-widget-viz > svg {
   display: block;
   background: linear-gradient(180deg, var(--sea-viz-bg-top), var(--sea-viz-bg-bottom));
@@ -559,21 +560,32 @@ function setupMount(options = {}) {
   if (mountEl.style) {
     if (!mountEl.style.width) mountEl.style.width = "100%";
     if (!mountEl.style.height) mountEl.style.height = "100%";
-    if (!mountEl.style.minHeight) mountEl.style.minHeight = `${WIDGET_MIN_HEIGHT_PX}px`;
+    const canMeasure = (typeof window !== "undefined" && typeof window.getComputedStyle === "function");
+    let hasExplicitHeight = false;
+    if (canMeasure) {
+      const cs = window.getComputedStyle(mountEl);
+      const h = String(cs.height || "").trim();
+      hasExplicitHeight = !!h && h !== "auto" && h !== "0px";
+    }
+    // Keep a fallback min-height only when host does not provide a real height.
+    if (!hasExplicitHeight && !mountEl.style.minHeight) {
+      mountEl.style.minHeight = `${WIDGET_MIN_HEIGHT_PX}px`;
+    }
   }
 }
 
 const cx = () => width * 0.5;
 const cy = () => height * 0.5;
 function activePolygonRadiusFactor() {
-  const base = Number(CONFIG.polygonRadiusFactor || 0.29);
+  const base = Number(CONFIG.polygonRadiusFactor || 0.41);
+  const wideMin = 0.41;
   if (layoutMode === "small") {
     return Math.max(base, Number(SEA_OPTIONS.smallPolygonRadiusFactor || 0.36));
   }
   if (layoutMode === "medium") {
     return Math.max(base, Number(SEA_OPTIONS.mediumPolygonRadiusFactor || 0.41));
   }
-  return base;
+  return Math.max(base, wideMin);
 }
 const R = () => Math.min(width, height) * activePolygonRadiusFactor();
 
@@ -1906,8 +1918,20 @@ async function main() {
         renderInfo(null);
       }
     }
+    updateFocusLinks();
+    updateDimTop();
     styleAll();
     if (options.kick !== false) kickSim(0.18);
+  }
+
+  if (!isSelectionEmpty(legend)) {
+    legend.selectAll(".legend-item")
+      .style("cursor", "pointer")
+      .on("click", (event, d) => {
+        event.stopPropagation();
+        setActiveModuleSelection(d.id, { force: true });
+        hideTooltip();
+      });
   }
 
   // Link layers

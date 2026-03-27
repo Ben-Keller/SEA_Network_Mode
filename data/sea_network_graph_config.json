@@ -1612,7 +1612,7 @@
     }
   ],
   "tuning": {
-    "polygonRadiusFactor": 0.29,
+    "polygonRadiusFactor": 0.41,
     "insetPadding": 38,
     "minEdgeDistance": 6,
     "minEdgeDistanceRefRadius": 190,
