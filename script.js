@@ -1233,6 +1233,7 @@ const DEFAULT_SEA_OPTIONS = {
   // Public API options
   dataUrls: {},
   data: {},
+  lang: "",
   d3: null,
   autoLoadD3: true,
   theme: "light",
@@ -1269,6 +1270,7 @@ const PUBLIC_OPTION_KEYS = new Set([
   "container",
   "dataUrls",
   "data",
+  "lang",
   "d3",
   "autoLoadD3",
   "theme",
@@ -1318,10 +1320,22 @@ function resolveDataUrl(key) {
   throw new Error(`[SEA] Missing data source for "${key}". Pass options.data.${key} or options.dataUrls.${key} (e.g. "${file}").`);
 }
 
+function withLangParam(url, key) {
+  // Language query is only required for module metadata endpoint.
+  if (key !== "moduleStructure") return url;
+  const rawLang = String(SEA_OPTIONS.lang || "").trim();
+  if (!rawLang) return url;
+  const rawUrl = String(url || "").trim();
+  if (!rawUrl) return rawUrl;
+  if (/[?&]lang=/i.test(rawUrl)) return rawUrl;
+  const sep = rawUrl.includes("?") ? "&" : "?";
+  return `${rawUrl}${sep}lang=${encodeURIComponent(rawLang)}`;
+}
+
 async function loadJsonData(key) {
   const inline = SEA_OPTIONS.data || {};
   if (inline[key] != null) return inline[key];
-  const url = resolveDataUrl(key);
+  const url = withLangParam(resolveDataUrl(key), key);
   try {
     return await D3.json(url);
   } catch (err) {
@@ -1347,6 +1361,16 @@ function normalizeModuleId(value) {
   const num = +raw.replace(/[^\d]/g, "");
   if (Number.isFinite(num) && num > 0) return String(num);
   return raw;
+}
+
+function resolveEntityId(entity) {
+  if (!entity || typeof entity !== "object") return null;
+  const candidates = [entity.id, entity.external_id, entity.strapi_id];
+  for (const value of candidates) {
+    const raw = String(value ?? "").trim();
+    if (raw) return raw;
+  }
+  return null;
 }
 
 function setConfigByPath(target, path, value) {
@@ -1732,7 +1756,7 @@ async function main() {
       for (const ch of (mod.chapters || [])) {
         const chImg = ch?.image?.src || modImg;
         for (const l of (ch.lessons || [])) {
-          const id = l.id;
+          const id = resolveEntityId(l);
           const img = l?.image?.src || l?.frame?.src || chImg || modImg || null;
           if (id && img) map.set(id, img);
         }
@@ -1814,13 +1838,14 @@ async function main() {
   const moduleMetaByNum = new Map();
   moduleMetaByKey = new Map();
   (moduleStructure?.modules || []).forEach((m) => {
-    const key = normalizeModuleId(m.id) || String(m.id || "");
-    const num = +String(m.id).replace(/[^\d]/g,"") || +m.id || 0;
+    const moduleId = resolveEntityId(m);
+    const key = normalizeModuleId(moduleId) || String(moduleId || "");
+    const num = +String(moduleId ?? "").replace(/[^\d]/g,"") || +moduleId || 0;
     const meta = {
       key,
-      id: m.id,
+      id: moduleId || m.id || m.external_id || m.strapi_id,
       num,
-      title: m.title || `Module ${m.id}`,
+      title: m.title || `Module ${moduleId || ""}`.trim(),
       color: m.color || null,
       image: m.image || null,
       description: m.description || "",
@@ -2666,6 +2691,7 @@ Options:
 - container: string | Element (required in embedded apps)
 - dataUrls: per-file URL overrides { graphConfig, moduleStructure }
 - data: optional in-memory payloads with same keys as dataUrls
+- lang: optional UI language code; appended as ?lang=<code> to moduleStructure URL fetch
 - d3: optional injected D3 instance
 - autoLoadD3: if true, loads D3 from the built-in CDN URL when not injected/global
 - theme: "light" | "dark" (default "light")
@@ -2782,6 +2808,7 @@ async function createSEALessonMap(options = {}) {
       hasDataModuleStructure: !!(options?.data && options.data.moduleStructure),
       dataUrlGraphConfig: options?.dataUrls?.graphConfig || null,
       dataUrlModuleStructure: options?.dataUrls?.moduleStructure || null,
+      lang: options?.lang || null,
       autoLoadD3: options?.autoLoadD3 !== false,
       hasInjectedD3: !!options?.d3,
     });

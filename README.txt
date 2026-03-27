@@ -77,6 +77,12 @@ Important behavior:
 - Note: dimension assets (`dimensions[].icon`, `dimensions[].image`) should be provided in `graphConfig`
   so visual assets can be changed from CMS without code changes.
 
+`options.lang`
+- Type: `string`
+- Default: `""` (not applied)
+- Purpose: active UI language code from the host app.
+- Behavior: when `dataUrls.moduleStructure` is used, widget appends `?lang=<code>` (or `&lang=<code>`) if the URL does not already include `lang=`.
+
 `options.d3`
 - Type: `object | null`
 - Default: `null`
@@ -111,6 +117,7 @@ Exact options object (public contract):
     graphConfig?: object,
     moduleStructure?: object,
   },
+  lang?: string,
   d3?: object | null,
   autoLoadD3?: boolean,
   theme?: "light" | "dark",
@@ -122,6 +129,7 @@ Implementation rule for data:
 - Pass either `data` (already-fetched JSON) or `dataUrls` (widget fetches URLs).
 - If both are present, `data` takes priority.
 - If neither is provided, initialization throws a missing-data-source error.
+- `lang` is applied only to `dataUrls.moduleStructure` fetches (not to inline `data`).
 
 Public API note:
 - Unsupported option keys are ignored with a console warning.
@@ -253,6 +261,7 @@ export function SeaViz({ visible }) {
       d3,
       autoLoadD3: false,      // no CDN load when app already bundles d3
       theme: "light",          // switch to "dark" on dark pages
+      lang: "en",              // host UI language; appended to moduleStructure URL
       dataUrls: {
         graphConfig: "/api/cms/sea/network-graph-config",
         moduleStructure: "/api/cms/sea/module-structure",
